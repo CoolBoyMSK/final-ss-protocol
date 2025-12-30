@@ -101,6 +101,27 @@ const SwapComponent = ({ preselectToken }) => {
       initializedRef.current = false;
     }
 
+    // If the caller provided a preselect token but the token list loads slowly (common after refresh),
+    // apply the preselect as soon as TOKENS contains it. This prevents the initial "Wrapped Pulse"
+    // fallback from sticking forever.
+    const desiredTokenOut = (() => {
+      if (!preselectToken) return null;
+      if (preselectToken === "STATE") return (chainId && nativeNames[chainId]) ? nativeNames[chainId] : null;
+      return "STATE";
+    })();
+    const desiredPairToken = preselectToken === "STATE" ? desiredTokenOut : preselectToken;
+    const canApplyPreselect = !!preselectToken && !!TOKENS?.[preselectToken] && (!desiredTokenOut || !!TOKENS?.[desiredTokenOut]) && !manualChangeRef.current;
+    if (canApplyPreselect) {
+      const needsUpdate = tokenIn !== preselectToken || tokenOut !== desiredTokenOut || pairToken !== desiredPairToken;
+      if (needsUpdate) {
+        if (desiredPairToken) setPairToken(desiredPairToken);
+        setTokenIn(preselectToken);
+        if (desiredTokenOut) setTokenOut(desiredTokenOut);
+      }
+      initializedRef.current = true;
+      return;
+    }
+
     if (manualChangeRef.current && initializedRef.current) {
       // user manually swapped; don't override their choice
       return;
@@ -108,9 +129,17 @@ const SwapComponent = ({ preselectToken }) => {
 
     if (!initializedRef.current) {
       if (preselectToken && TOKENS[preselectToken]) {
-        setPairToken(preselectToken);
-        setTokenIn(preselectToken);
-        setTokenOut("STATE");
+        // For STATE, default to swapping STATE -> wrapped native (e.g., Wrapped Pulse on PulseChain)
+        if (preselectToken === "STATE") {
+          const wrapped = (chainId && nativeNames[chainId]) ? nativeNames[chainId] : "STATE";
+          setPairToken(wrapped);
+          setTokenIn("STATE");
+          setTokenOut(wrapped);
+        } else {
+          setPairToken(preselectToken);
+          setTokenIn(preselectToken);
+          setTokenOut("STATE");
+        }
         initializedRef.current = true;
         return;
       }
@@ -121,7 +150,7 @@ const SwapComponent = ({ preselectToken }) => {
       }
       initializedRef.current = true;
     }
-  }, [chainId, preselectToken, TOKENS]);
+  }, [chainId, preselectToken, TOKENS, tokenIn, tokenOut, pairToken]);
 
   // Periodically fetch "current ratio" (1 tokenIn -> X tokenOut) every 5 seconds
   const refreshRatio = async () => {

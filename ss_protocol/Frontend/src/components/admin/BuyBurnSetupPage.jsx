@@ -43,33 +43,71 @@ export default function BuyBurnSetupPage() {
   // Controller Wallet: send PLS inline input
   const [sendPlsAmount, setSendPlsAmount] = useState("");
   // DAV Vault integration (reuse existing logic from DetailsInfo)
+  // Use useState instead of useMemo to allow re-reading from localStorage
   const { tokens: tokensForDav } = TokensDetails();
-  const stateTokenRow = React.useMemo(() => {
-    try { return (tokensForDav || []).find(t => t?.tokenName === 'STATE') || null; } catch { return null; }
-  }, [tokensForDav]);
-  const savedStateTokenBalance = React.useMemo(() => {
+  const [savedStateTokenBalance, setSavedStateTokenBalance] = React.useState(null);
+  const [stateOutLoading, setStateOutLoading] = React.useState(true);
+
+  // Read localStorage on mount and when refresh button is clicked
+  const readSavedBalance = React.useCallback(() => {
     try {
       const saved = localStorage.getItem("stateTokenBalance");
-      if (!saved) return null;
+      if (!saved) {
+        setSavedStateTokenBalance(null);
+        return null;
+      }
       const parsed = JSON.parse(saved);
-      return parsed?.balance ?? null;
-    } catch { return null; }
+      const balance = parsed?.balance ?? null;
+      setSavedStateTokenBalance(balance);
+      return balance;
+    } catch {
+      setSavedStateTokenBalance(null);
+      return null;
+    }
   }, []);
+
+  // Initialize on mount and set up storage event listener for cross-tab sync
+  React.useEffect(() => {
+    readSavedBalance();
+    // Listen for localStorage changes (from other tabs or manual refresh)
+    const handleStorage = (e) => {
+      if (e.key === 'stateTokenBalance') readSavedBalance();
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [readSavedBalance]);
+
+  // Find STATE token - update when tokensForDav changes
+  const stateTokenRow = React.useMemo(() => {
+    if (!tokensForDav || !Array.isArray(tokensForDav) || tokensForDav.length === 0) return null;
+    try { return tokensForDav.find(t => t?.tokenName === 'STATE') || null; } catch { return null; }
+  }, [tokensForDav]);
+
+  // Calculate STATE out value when both values are available
   const stateOutValue = React.useMemo(() => {
     try {
       if (savedStateTokenBalance == null) return null;
-      const current = Number(stateTokenRow?.DavVault ?? 0);
+      // Wait for STATE token to be found if tokens are loading
+      if (stateTokenRow == null) return null;
+      const current = Number(stateTokenRow.DavVault ?? 0);
       const saved = Number(savedStateTokenBalance);
       if (!Number.isFinite(current) || !Number.isFinite(saved)) return null;
       return saved - current; // same as DetailsInfo second value
     } catch { return null; }
   }, [savedStateTokenBalance, stateTokenRow]);
 
-  // Calculate AMM PLS value for STATE Out
+  // Update loading state based on data availability (separate from useMemo)
+  React.useEffect(() => {
+    const isLoading = savedStateTokenBalance == null || (tokensForDav?.length > 0 && stateTokenRow == null);
+    setStateOutLoading(isLoading);
+  }, [savedStateTokenBalance, stateTokenRow, tokensForDav]);
+
+  // Calculate AMM PLS value for STATE Out - use read-only provider for reliability
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!signer || chainId !== 369 || stateOutValue == null) {
+      // Don't require signer - use httpProvider for read-only AMM calculation
+      if (chainId !== 369 || stateOutValue == null) {
         if (!cancelled) setStateOutPlsValue(stateOutValue === 0 ? 0 : null);
         return;
       }
@@ -78,10 +116,12 @@ export default function BuyBurnSetupPage() {
         return;
       }
       try {
+        // Use read-only JsonRpcProvider for AMM calculation (no wallet needed)
+        const httpProvider = new ethers.JsonRpcProvider("https://rpc.pulsechain.com");
         const routerContract = new ethers.Contract(
           PULSEX_ROUTER_ADDRESS,
           PULSEX_ROUTER_ABI,
-          signer.provider
+          httpProvider
         );
         const plsValue = await calculateStateAmmPlsValueNumeric(stateOutValue, routerContract, TOKENS, chainId);
         if (!cancelled) setStateOutPlsValue(plsValue);
@@ -91,7 +131,7 @@ export default function BuyBurnSetupPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [stateOutValue, signer, chainId, TOKENS]);
+  }, [stateOutValue, chainId, TOKENS]);
 
   // Step 2: Setup SWAP vault allowance on controller (governance-only)
   const [allowanceAmount, setAllowanceAmount] = useState("");
@@ -676,12 +716,24 @@ export default function BuyBurnSetupPage() {
                     <div className="d-flex align-items-center gap-2 w-100">
                       <i className="bi bi-coin text-warning" />
                       <span className="fw-semibold" style={{ color: "#ff4081" }}>
-                        {stateOutValue == null ? '—' : formatWithCommas(stateOutValue)} STATE
+                        {stateOutLoading ? (
+                          <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />
+                        ) : stateOutValue == null ? (
+                          <span title="No snapshot saved yet. Click refresh to save current balance.">No snapshot</span>
+                        ) : (
+                          formatWithCommas(stateOutValue)
+                        )} STATE
                       </span>
                       <button
                         type="button"
                         className="btn btn-sm btn-outline-secondary ms-auto"
-                        onClick={async () => { try { await getStateTokenBalanceAndSave(); notifySuccess('STATE snapshot updated'); } catch {} }}
+                        onClick={async () => { 
+                          try { 
+                            await getStateTokenBalanceAndSave(); 
+                            readSavedBalance(); // Re-read localStorage after saving
+                            notifySuccess('STATE snapshot updated'); 
+                          } catch {} 
+                        }}
                         title="Refresh cached STATE balance"
                       >
                         <i className="bi bi-arrow-clockwise" />

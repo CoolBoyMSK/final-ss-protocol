@@ -385,7 +385,7 @@ const TokenRow = memo(({
           statePoolAddress && statePoolAddress !== "0x0000000000000000000000000000000000000000" ? (
             <button
               className="btn btn-sm btn-primary"
-              onClick={() => { setDexToken(nativeWrappedKey); setShowDex(true); }}
+              onClick={() => { setDexToken('STATE'); setShowDex(true); }}
               title="Open DEX for STATE/WPLS"
             >
               DEX
