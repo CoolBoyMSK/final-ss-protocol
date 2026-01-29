@@ -278,7 +278,6 @@ export const TokensDetails = () => {
   });
 
   const refetch = () => {
-    setLoading(true);
     setRefreshKey((p) => p + 1);
   };
 

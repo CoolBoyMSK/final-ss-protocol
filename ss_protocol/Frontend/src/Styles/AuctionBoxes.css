@@ -74,6 +74,7 @@
   /* Match Ratio Swap label size and remove bold */
   font-size: 12px;
   font-weight: 400;
+  padding-top: 8px; /* add breathing room from top border */
   margin-bottom: 6px;
   margin-left: 0; /* align with button band */
 }

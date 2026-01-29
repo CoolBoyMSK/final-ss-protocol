@@ -10,6 +10,7 @@ import { PULSEX_ROUTER_ADDRESS, PULSEX_ROUTER_ABI } from "../../Constants/Consta
 import { getRuntimeConfigSync } from "../../Constants/RuntimeConfig";
 import { useChainId } from "wagmi";
 import { useAllTokens } from "../Swap/Tokens";
+import { useStateOutWorker } from "../../hooks/useStateOutWorker";
 
 export default function BuyBurnSetupPage() {
   const chainId = useChainId();
@@ -42,11 +43,27 @@ export default function BuyBurnSetupPage() {
   const [lastUpdated, setLastUpdated] = useState(null);
   // Controller Wallet: send PLS inline input
   const [sendPlsAmount, setSendPlsAmount] = useState("");
-  // DAV Vault integration (reuse existing logic from DetailsInfo)
-  // Use useState instead of useMemo to allow re-reading from localStorage
+  
+  // ========== NEW: Worker-based STATE Out calculation ==========
+  // Uses Web Worker to scan TokensSwapped events in background
+  // Only counts actual STATE payouts to users (excludes liquidity adds)
+  const {
+    loading: stateOutWorkerLoading,
+    progress: stateOutProgress,
+    error: stateOutError,
+    totalStateOut: stateOutValue,
+    resetBlock: stateOutResetBlock,
+    calculate: calculateStateOut,
+    resetCounter: resetStateOutCounter,
+    lastUpdated: stateOutLastUpdated
+  } = useStateOutWorker({ chainId, autoStart: true });
+  
+  // Derived loading state for UI
+  const stateOutLoading = stateOutWorkerLoading;
+
+  // DAV Vault integration (kept for backwards compatibility / fallback)
   const { tokens: tokensForDav } = TokensDetails();
   const [savedStateTokenBalance, setSavedStateTokenBalance] = React.useState(null);
-  const [stateOutLoading, setStateOutLoading] = React.useState(true);
 
   // Read localStorage on mount and when refresh button is clicked
   const readSavedBalance = React.useCallback(() => {
@@ -77,30 +94,24 @@ export default function BuyBurnSetupPage() {
     return () => window.removeEventListener('storage', handleStorage);
   }, [readSavedBalance]);
 
-  // Find STATE token - update when tokensForDav changes
+  // Find STATE token - update when tokensForDav changes (kept for fallback)
   const stateTokenRow = React.useMemo(() => {
     if (!tokensForDav || !Array.isArray(tokensForDav) || tokensForDav.length === 0) return null;
     try { return tokensForDav.find(t => t?.tokenName === 'STATE') || null; } catch { return null; }
   }, [tokensForDav]);
 
-  // Calculate STATE out value when both values are available
-  const stateOutValue = React.useMemo(() => {
-    try {
-      if (savedStateTokenBalance == null) return null;
-      // Wait for STATE token to be found if tokens are loading
-      if (stateTokenRow == null) return null;
-      const current = Number(stateTokenRow.DavVault ?? 0);
-      const saved = Number(savedStateTokenBalance);
-      if (!Number.isFinite(current) || !Number.isFinite(saved)) return null;
-      return saved - current; // same as DetailsInfo second value
-    } catch { return null; }
-  }, [savedStateTokenBalance, stateTokenRow]);
-
-  // Update loading state based on data availability (separate from useMemo)
-  React.useEffect(() => {
-    const isLoading = savedStateTokenBalance == null || (tokensForDav?.length > 0 && stateTokenRow == null);
-    setStateOutLoading(isLoading);
-  }, [savedStateTokenBalance, stateTokenRow, tokensForDav]);
+  // OLD: Calculate STATE out value from localStorage snapshot (DEPRECATED - now using worker)
+  // Keeping for reference / fallback if needed
+  // const stateOutValueOld = React.useMemo(() => {
+  //   try {
+  //     if (savedStateTokenBalance == null) return null;
+  //     if (stateTokenRow == null) return null;
+  //     const current = Number(stateTokenRow.DavVault ?? 0);
+  //     const saved = Number(savedStateTokenBalance);
+  //     if (!Number.isFinite(current) || !Number.isFinite(saved)) return null;
+  //     return saved - current;
+  //   } catch { return null; }
+  // }, [savedStateTokenBalance, stateTokenRow]);
 
   // Calculate AMM PLS value for STATE Out - use read-only provider for reliability
   React.useEffect(() => {
@@ -712,29 +723,39 @@ export default function BuyBurnSetupPage() {
                 </div>
                 <div className="col-md-3">
                   <div className="p-3 rounded bg-secondary bg-opacity-10 h-100">
-                    <div className="small text-white mb-1">PLS to Burn (STATE Out)</div>
+                    <div className="small text-white mb-1 d-flex align-items-center gap-2">
+                      <span>STATE Out to Users</span>
+                      {stateOutResetBlock && (
+                        <span className="badge bg-info bg-opacity-50" style={{ fontSize: '0.65rem' }}>
+                          Since block {stateOutResetBlock.toLocaleString()}
+                        </span>
+                      )}
+                    </div>
                     <div className="d-flex align-items-center gap-2 w-100">
                       <i className="bi bi-coin text-warning" />
                       <span className="fw-semibold" style={{ color: "#ff4081" }}>
                         {stateOutLoading ? (
-                          <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />
+                          <>
+                            <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />
+                            {stateOutProgress > 0 && stateOutProgress < 100 && (
+                              <span className="small text-muted">{stateOutProgress}%</span>
+                            )}
+                          </>
                         ) : stateOutValue == null ? (
-                          <span title="No snapshot saved yet. Click refresh to save current balance.">No snapshot</span>
+                          <span title="Click refresh to calculate STATE out from events">Not calculated</span>
                         ) : (
-                          formatWithCommas(stateOutValue)
+                          formatWithCommas(Math.round(stateOutValue))
                         )} STATE
                       </span>
                       <button
                         type="button"
                         className="btn btn-sm btn-outline-secondary ms-auto"
-                        onClick={async () => { 
-                          try { 
-                            await getStateTokenBalanceAndSave(); 
-                            readSavedBalance(); // Re-read localStorage after saving
-                            notifySuccess('STATE snapshot updated'); 
-                          } catch {} 
+                        onClick={() => { 
+                          calculateStateOut();
+                          notifySuccess('Recalculating STATE out...'); 
                         }}
-                        title="Refresh cached STATE balance"
+                        disabled={stateOutLoading}
+                        title="Recalculate STATE out from blockchain events"
                       >
                         <i className="bi bi-arrow-clockwise" />
                       </button>
@@ -744,8 +765,24 @@ export default function BuyBurnSetupPage() {
                       <span className="fw-semibold text-success">
                         {stateOutPlsValue == null ? '—' : formatWithCommas(Math.trunc(stateOutPlsValue))} PLS
                       </span>
+                      {/* Reset button - same size as recalculate */}
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-warning ms-auto"
+                        onClick={async () => {
+                          try {
+                            const newBlock = await resetStateOutCounter();
+                            notifySuccess(`Counter reset at block ${newBlock.toLocaleString()}`);
+                          } catch (err) {
+                            notifyError('Failed to reset counter');
+                          }
+                        }}
+                        disabled={stateOutLoading}
+                        title="Reset counter to 0 (use after adding liquidity)"
+                      >
+                        <i className="bi bi-skip-start-fill" />
+                      </button>
                     </div>
-                    {/* Using same integration pattern as DetailsInfo: savedStateTokenBalance - DavVault */}
                   </div>
                 </div>
               </div>
@@ -754,7 +791,7 @@ export default function BuyBurnSetupPage() {
             <div className="text-muted d-flex align-items-center gap-2">
               <i className="bi bi-exclamation-circle" /> No pool detected yet
             </div>
-          )}
+          )}}
         {/* Before pool exists: show ONLY Create Pool UI */}
         {!(poolStatus?.poolAddress && poolStatus.poolAddress !== ethers.ZeroAddress) && (
           <form onSubmit={handleCreatePool}>

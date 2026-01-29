@@ -16,6 +16,7 @@ export default function TokenManagementPage() {
   const [allowanceForm, setAllowanceForm] = useState({ token: "" });
   const [allowanceStatus, setAllowanceStatus] = useState({ token: null, state: null, checking: false });
   const [tokens, setTokens] = useState([]);
+  const [tokenCount, setTokenCount] = useState(0);
   const [selectedToken, setSelectedToken] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [modalAllowanceStatus, setModalAllowanceStatus] = useState({ token: null, state: null, checking: false });
@@ -42,6 +43,12 @@ export default function TokenManagementPage() {
   const stateTokenAddress = useMemo(() => AllContracts?.stateContract?.target || AllContracts?._stateAddress, [AllContracts]);
   const [isGov, setIsGov] = useState(false);
 
+  const allPoolsCreated = useMemo(() => {
+    if (tokenCount <= 0) return false;
+    if (!tokens || tokens.length === 0) return false;
+    return tokens.every((t) => t?.pair && t.pair !== ethers.ZeroAddress);
+  }, [tokenCount, tokens]);
+
   // Generate random 4-character hash
   const generateHash = () => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -62,9 +69,13 @@ export default function TokenManagementPage() {
   const tokenSymbol = deployForm.hash ? `p${deployForm.hash}` : '';
 
   const refreshTokens = async () => {
-    if (!AuctionContract) return;
+    if (!AuctionContract) {
+      setTokenCount(0);
+      return;
+    }
     try {
       const count = Number(await AuctionContract.tokenCount?.().catch(() => 0));
+      setTokenCount(count);
       if (count === 0) {
         setTokens([]);
         return;
@@ -82,13 +93,20 @@ export default function TokenManagementPage() {
       // Step 1: Fetch all token addresses in PARALLEL
       const addressPromises = [];
       for (let i = 0; i < count; i++) {
-        addressPromises.push(AuctionContract.autoRegisteredTokens(i).catch(() => null));
+        addressPromises.push(
+          AuctionContract.autoRegisteredTokens(i)
+            .then((addr) => ({ index: i, addr }))
+            .catch(() => ({ index: i, addr: null }))
+        );
       }
-      const addresses = await Promise.all(addressPromises);
-      const validAddresses = addresses.filter(addr => addr && addr !== ethers.ZeroAddress);
+      const addressesWithIndex = await Promise.all(addressPromises);
+      const validAddresses = addressesWithIndex
+        .filter(({ addr }) => addr && addr !== ethers.ZeroAddress)
+        // Descending: highest index (latest token) first
+        .sort((a, b) => b.index - a.index);
       
       // Step 2: Fetch all token data in PARALLEL (pair, name, symbol, burnedLp)
-      const tokenDataPromises = validAddresses.map(async (tokenAddr) => {
+      const tokenDataPromises = validAddresses.map(async ({ index, addr: tokenAddr }) => {
         try {
           // Get pair address
           const pair = await AuctionContract.getPairAddress(tokenAddr).catch(() => ethers.ZeroAddress);
@@ -116,9 +134,9 @@ export default function TokenManagementPage() {
             })()
           ]);
           
-          return { token: tokenAddr, pair, name, symbol, burnedLp: burnedLpData };
+          return { token: tokenAddr, pair, name, symbol, burnedLp: burnedLpData, tokenIndex: index + 1 };
         } catch {
-          return { token: tokenAddr, pair: ethers.ZeroAddress, name: null, symbol: null, burnedLp: 0 };
+          return { token: tokenAddr, pair: ethers.ZeroAddress, name: null, symbol: null, burnedLp: 0, tokenIndex: index + 1 };
         }
       });
       
@@ -1012,45 +1030,46 @@ export default function TokenManagementPage() {
     <>
       
 
-      {/* Deploy Token Card */}
-      <div className="card mb-4">
-        <div className="card-header bg-primary bg-opacity-10">
-          <h6 className="mb-0">
-            <i className="bi bi-rocket-takeoff-fill me-2"></i>
-            DEPLOY NEW TOKEN
-          </h6>
-        </div>
-        <div className="card-body">
-          <form onSubmit={deployToken}>
-            <div className="row g-3 align-items-center">
-              <div className="col-md-4">
-                <label className="form-label small fw-bold text-uppercase">
-                  <i className="bi bi-hash me-1"></i>
-                  4-Character Hash
-                </label>
-                <div className="input-group">
-                  <input
-                    className="form-control text-uppercase"
-                    value={deployForm.hash}
-                    onChange={(e)=>{
-                      const v = (e.target.value || "").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,4);
-                      setDeployForm(p=>({...p, hash: v}));
-                    }}
-                    placeholder="AB12"
-                    maxLength={4}
-                  />
-                  <button
-                    type="button"
-                    className="btn btn-outline-secondary"
-                    onClick={()=> setDeployForm(p=>({...p, hash: generateHash()}))}
-                    disabled={loading}
-                    title="Regenerate Hash"
-                  >
-                    <i className="bi bi-shuffle"></i>
-                  </button>
+      {tokenCount < 50 && (
+        /* Deploy Token Card */
+        <div className="card mb-4">
+          <div className="card-header bg-primary bg-opacity-10">
+            <h6 className="mb-0">
+              <i className="bi bi-rocket-takeoff-fill me-2"></i>
+              DEPLOY NEW TOKEN
+            </h6>
+          </div>
+          <div className="card-body">
+            <form onSubmit={deployToken}>
+              <div className="row g-3 align-items-center">
+                <div className="col-md-4">
+                  <label className="form-label small fw-bold text-uppercase">
+                    <i className="bi bi-hash me-1"></i>
+                    4-Character Hash
+                  </label>
+                  <div className="input-group">
+                    <input
+                      className="form-control text-uppercase"
+                      value={deployForm.hash}
+                      onChange={(e)=>{
+                        const v = (e.target.value || "").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,4);
+                        setDeployForm(p=>({...p, hash: v}));
+                      }}
+                      placeholder="AB12"
+                      maxLength={4}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-outline-secondary"
+                      onClick={()=> setDeployForm(p=>({...p, hash: generateHash()}))}
+                      disabled={loading}
+                      title="Regenerate Hash"
+                    >
+                      <i className="bi bi-shuffle"></i>
+                    </button>
+                  </div>
+                  <small className="text-muted">Only A-Z and 0-9, exactly 4 characters</small>
                 </div>
-                <small className="text-muted">Only A-Z and 0-9, exactly 4 characters</small>
-              </div>
 
               <div className="col-md-4">
                 <label className="form-label small fw-bold text-uppercase">
@@ -1098,87 +1117,90 @@ export default function TokenManagementPage() {
                 </button>
               </div>
             </div>
-          </form>
+            </form>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Create Pool Card */}
-      <div className="card mb-4">
-        <div className="card-header bg-success bg-opacity-10">
-          <h6 className="mb-0">
-            <i className="bi bi-water me-2"></i>
-            CREATE LIQUIDITY POOL
-          </h6>
+      {!allPoolsCreated && (
+        /* Create Pool Card */
+        <div className="card mb-4">
+          <div className="card-header bg-success bg-opacity-10">
+            <h6 className="mb-0">
+              <i className="bi bi-water me-2"></i>
+              CREATE LIQUIDITY POOL
+            </h6>
+          </div>
+          <div className="card-body">
+            <form onSubmit={createPool}>
+              <div className="row g-3 align-items-end">
+                <div className="col-md-4">
+                  <label className="form-label small fw-bold text-uppercase">
+                    <i className="bi bi-coin me-1"></i>
+                    Token Address
+                  </label>
+                  <input 
+                    className="form-control font-monospace" 
+                    value={poolForm.token} 
+                    onChange={(e)=>setPoolForm(p=>({...p,token:e.target.value}))} 
+                    placeholder="0x..." 
+                    required 
+                  />
+                </div>
+                <div className="col-md-3">
+                  <label className="form-label small fw-bold text-uppercase">
+                    <i className="bi bi-cash-stack me-1"></i>
+                    Token Amount
+                  </label>
+                  <input 
+                    type="number" 
+                    step="0.000000000000000001" 
+                    className="form-control" 
+                    value={poolForm.tokenAmount}
+                    readOnly
+                    placeholder="10000" 
+                    required 
+                  />
+                </div>
+                <div className="col-md-2">
+                  <label className="form-label small fw-bold text-uppercase">
+                    <i className="bi bi-wallet2 me-1"></i>
+                    STATE Amount
+                  </label>
+                  <input 
+                    type="number" 
+                    step="0.000000000000000001" 
+                    className="form-control" 
+                    value={poolForm.stateAmount}
+                    readOnly
+                    placeholder="1000000" 
+                    required 
+                  />
+                </div>
+                <div className="col-md-3">
+                  <button 
+                    className="btn btn-primary w-100 btn-lg" 
+                    type="submit"
+                    disabled={!canManage || loading}
+                  >
+                    {loading ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm me-2"/>
+                        Creating...
+                      </>
+                    ) : (
+                      <>
+                        <i className="bi bi-plus-circle-fill me-2"></i>
+                        Create Pool
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
         </div>
-        <div className="card-body">
-          <form onSubmit={createPool}>
-            <div className="row g-3 align-items-end">
-              <div className="col-md-4">
-                <label className="form-label small fw-bold text-uppercase">
-                  <i className="bi bi-coin me-1"></i>
-                  Token Address
-                </label>
-                <input 
-                  className="form-control font-monospace" 
-                  value={poolForm.token} 
-                  onChange={(e)=>setPoolForm(p=>({...p,token:e.target.value}))} 
-                  placeholder="0x..." 
-                  required 
-                />
-              </div>
-              <div className="col-md-3">
-                <label className="form-label small fw-bold text-uppercase">
-                  <i className="bi bi-cash-stack me-1"></i>
-                  Token Amount
-                </label>
-                <input 
-                  type="number" 
-                  step="0.000000000000000001" 
-                  className="form-control" 
-                  value={poolForm.tokenAmount}
-                  readOnly
-                  placeholder="10000" 
-                  required 
-                />
-              </div>
-              <div className="col-md-2">
-                <label className="form-label small fw-bold text-uppercase">
-                  <i className="bi bi-wallet2 me-1"></i>
-                  STATE Amount
-                </label>
-                <input 
-                  type="number" 
-                  step="0.000000000000000001" 
-                  className="form-control" 
-                  value={poolForm.stateAmount}
-                  readOnly
-                  placeholder="1000000" 
-                  required 
-                />
-              </div>
-              <div className="col-md-3">
-                <button 
-                  className="btn btn-primary w-100 btn-lg" 
-                  type="submit"
-                  disabled={!canManage || loading}
-                >
-                  {loading ? (
-                    <>
-                      <span className="spinner-border spinner-border-sm me-2"/>
-                      Creating...
-                    </>
-                  ) : (
-                    <>
-                      <i className="bi bi-plus-circle-fill me-2"></i>
-                      Create Pool
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
-      </div>
+      )}
 
       {/* Tokens List with Add Liquidity Actions */}
       <div className="card">
@@ -1221,7 +1243,7 @@ export default function TokenManagementPage() {
                 <tbody>
                   {tokens.map((t, idx) => (
                     <tr key={t.token}>
-                      <td className="fw-bold">{idx+1}</td>
+                      <td className="fw-bold">{t.tokenIndex ?? (idx + 1)}</td>
                       <td>
                         <div className="d-flex align-items-center gap-2">
                           <img

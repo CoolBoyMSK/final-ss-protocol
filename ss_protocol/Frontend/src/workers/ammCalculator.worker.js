@@ -35,34 +35,6 @@ function initProvider() {
   return { provider, routerContract };
 }
 
-// Calculate PLS value for a single token via AMM
-async function calculateTokenPlsValue(tokenAddress, balance, decimals = 18) {
-  if (!balance || balance === '0' || !tokenAddress) return { numeric: 0, display: '0' };
-  
-  try {
-    const { routerContract } = initProvider();
-    
-    // Parse balance to wei
-    const balanceWei = ethers.parseUnits(String(balance), decimals);
-    if (balanceWei === 0n) return { numeric: 0, display: '0' };
-    
-    // Get quote: TOKEN -> WPLS
-    const path = [tokenAddress, WPLS_ADDRESS];
-    const amounts = await routerContract.getAmountsOut(balanceWei, path);
-    const plsAmount = amounts[amounts.length - 1];
-    
-    const numericValue = Number(ethers.formatEther(plsAmount));
-    const displayValue = numericValue >= 1 
-      ? Math.floor(numericValue).toLocaleString()
-      : numericValue.toFixed(4);
-    
-    return { numeric: numericValue, display: displayValue };
-  } catch (error) {
-    console.debug('AMM calculation error for', tokenAddress, error.message);
-    return { numeric: 0, display: 'N/A' };
-  }
-}
-
 // Calculate TOKEN -> STATE output (wei)
 async function calculateTokenStateWei(tokenAddress, balance, stateAddress, decimals = 18) {
   if (!balance || balance === '0' || !tokenAddress) return 0n;
@@ -105,38 +77,6 @@ function formatWeiToDisplay(wei) {
   } catch {
     return '0';
   }
-}
-
-// Calculate STATE -> PLS value
-async function calculateStatePlsValue(stateBalance) {
-  if (!stateBalance || stateBalance === '0') return { numeric: 0, display: '0' };
-  
-  try {
-    const { routerContract } = initProvider();
-    
-    const balanceWei = ethers.parseUnits(String(stateBalance), 18);
-    if (balanceWei === 0n) return { numeric: 0, display: '0' };
-    
-    // STATE -> WPLS
-    const path = [STATE_ADDRESS, WPLS_ADDRESS];
-    const amounts = await routerContract.getAmountsOut(balanceWei, path);
-    const plsAmount = amounts[amounts.length - 1];
-    
-    const numericValue = Number(ethers.formatEther(plsAmount));
-    const displayValue = numericValue >= 1 
-      ? Math.floor(numericValue).toLocaleString()
-      : numericValue.toFixed(4);
-    
-    return { numeric: numericValue, display: displayValue };
-  } catch (error) {
-    console.debug('STATE AMM calculation error', error.message);
-    return { numeric: 0, display: 'N/A' };
-  }
-}
-
-// Main calculation function - calculates all tokens at once
-async function calculateAllAmmValues(tokens, tokenBalances) {
-  return calculateAllAmmValuesWithOptions(tokens, tokenBalances, {});
 }
 
 async function calculateAllAmmValuesWithOptions(tokens, tokenBalances, options) {
@@ -206,13 +146,29 @@ async function calculateAllAmmValuesWithOptions(tokens, tokenBalances, options) 
         results[tokenName] = '-----';
         continue;
       }
+
       const tokenStateWei = stateWeiByToken[tokenName] || 0n;
-      if (totalStateWei === 0n || totalPlsWei === 0n || tokenStateWei === 0n) {
+      if (tokenStateWei === 0n) {
         results[tokenName] = '0';
         continue;
       }
-      const tokenPlsWei = (totalPlsWei * tokenStateWei) / totalStateWei;
-      results[tokenName] = formatWeiToDisplay(tokenPlsWei);
+
+      if (tokenName === 'STATE') {
+        // STATE row shows STATE -> PLS (matches STATE/WPLS DEX)
+        try {
+          const { routerContract } = initProvider();
+          const path = [stateAddress, wplsAddress];
+          const amounts = await routerContract.getAmountsOut(tokenStateWei, path);
+          const plsWei = amounts[amounts.length - 1] || 0n;
+          results[tokenName] = formatWeiToDisplay(plsWei);
+        } catch {
+          results[tokenName] = '0';
+        }
+        continue;
+      }
+
+      // Non-STATE tokens show TOKEN -> STATE value
+      results[tokenName] = formatWeiToDisplay(tokenStateWei);
     }
   }
 

@@ -2,11 +2,9 @@
  * useBackgroundAmmCalculator Hook
  * 
  * Manages AMM calculations in the background to keep UI responsive.
- * - Uses requestIdleCallback / setTimeout for non-blocking calculations
  * - Caches results in localStorage for instant display
- * - Refreshes every 30 seconds (configurable)
+ * - Refreshes periodically via smart polling (faster when active, slower when idle)
  * - Shows cached values immediately on mount
- * - Calculates in small batches to prevent UI jank
  * 
  * IMPORTANT: Uses TOKENS[tokenName].address for address lookup (same as Utils.js)
  * Auction tokens route: TOKEN → STATE → WPLS (two-step via STATE)
@@ -26,9 +24,9 @@ const PULSEX_ROUTER_ABI = [
 const RPC_URL = 'https://pulsechain-rpc.publicnode.com';
 
 // Cache key and TTL
-const AMM_CACHE_KEY = 'ammValuesCache_v3';
+// v4: per-token values are STATE-denominated (except STATE shown in PLS)
+const AMM_CACHE_KEY = 'ammValuesCache_v4';
 const AMM_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-const REFRESH_INTERVAL = 30 * 1000; // 30 seconds between background updates
 
 // Load cached values
 function loadCache() {
@@ -55,13 +53,6 @@ function saveCache(values, totalSum) {
 }
 
 // Format number with commas
-function formatWithCommas(num) {
-  if (num === undefined || num === null) return '0';
-  const n = Number(num);
-  if (!Number.isFinite(n)) return '0';
-  return n.toLocaleString('en-US', { maximumFractionDigits: 0 });
-}
-
 // Format a 18-decimal wei BigInt into an integer string with commas.
 function formatWeiToIntegerWithCommas(wei) {
   try {
@@ -108,14 +99,10 @@ export function useBackgroundAmmCalculator(sortedTokens, tokenBalances, chainId,
   // Refs for background calculation management - prevents memory leaks
   const mountedRef = useRef(true);
   const lastCalcTimeRef = useRef(0);
-  const intervalRef = useRef(null);
   const calculationIdRef = useRef(0);
   const providerRef = useRef(null);
   const routerRef = useRef(null);
   const isCalculatingRef = useRef(false); // Prevent concurrent calculations
-  
-  // Stable token addresses for comparison
-  const tokenAddressesRef = useRef('');
   
   // Get addresses from TOKENS object (same pattern as Utils.js)
   const getTokensAddresses = useCallback(() => {
@@ -241,8 +228,6 @@ export function useBackgroundAmmCalculator(sortedTokens, tokenBalances, chainId,
     const calcId = ++calculationIdRef.current;
     setIsCalculating(true);
     
-    const startTime = performance.now();
-    
     try {
       const stateWeiByToken = {};
       let totalStateWei = 0n;
@@ -299,21 +284,46 @@ export function useBackgroundAmmCalculator(sortedTokens, tokenBalances, chainId,
         totalPlsWei = 0n;
       }
 
-      // Allocate per-token PLS proportionally to STATE contribution so row sum == total
+      // Per-token displays:
+      // - For non-STATE tokens: show TOKEN → STATE value (STATE-denominated)
+      // - For STATE token: show STATE → WPLS value (PLS-denominated, matches STATE/WPLS DEX)
       const results = {};
+      const router = getRouter();
+      const { stateAddress, wplsAddress } = getTokensAddresses();
+
       for (const token of sortedTokens) {
         const tokenName = token.tokenName;
         if (tokenName === 'DAV') {
           results[tokenName] = '-----';
           continue;
         }
+
         const tokenStateWei = stateWeiByToken[tokenName] || 0n;
-        if (totalStateWei === 0n || totalPlsWei === 0n || tokenStateWei === 0n) {
+        if (tokenStateWei === 0n) {
           results[tokenName] = '0';
           continue;
         }
-        const tokenPlsWei = (totalPlsWei * tokenStateWei) / totalStateWei;
-        results[tokenName] = formatWeiToDisplay(tokenPlsWei);
+
+        if (tokenName === 'STATE') {
+          // Quote only STATE balance (not the full portfolio)
+          try {
+            if (stateAddress && wplsAddress) {
+              const checksumState = toChecksumAddress(stateAddress);
+              const checksumWpls = toChecksumAddress(wplsAddress);
+              const path = [checksumState, checksumWpls];
+              const amounts = await router.getAmountsOut(tokenStateWei, path);
+              const statePlsWei = amounts[amounts.length - 1] || 0n;
+              results[tokenName] = formatWeiToDisplay(statePlsWei);
+              continue;
+            }
+          } catch {
+            // fall through to '0'
+          }
+          results[tokenName] = '0';
+          continue;
+        }
+
+        results[tokenName] = formatWeiToDisplay(tokenStateWei);
       }
       
       setAmmValuesMap(results);
@@ -361,14 +371,14 @@ export function useBackgroundAmmCalculator(sortedTokens, tokenBalances, chainId,
       runBackgroundCalculation();
     }
     
-    // Smart polling for AMM: 15s active, 60s idle
+    // Smart polling for AMM (heavier RPC): 30s active, 120s idle
     const poller = createSmartPoller(() => {
       if (mountedRef.current && hasBalances) {
         runBackgroundCalculation();
       }
     }, {
-      activeInterval: 15000,   // 15s when user is active
-      idleInterval: 60000,     // 60s when idle
+      activeInterval: 30000,   // 30s when user is active
+      idleInterval: 120000,    // 120s when idle
       fetchOnStart: false,     // Already handled above
       fetchOnVisible: true,    // Refresh when tab becomes visible
       name: 'amm-calculator'

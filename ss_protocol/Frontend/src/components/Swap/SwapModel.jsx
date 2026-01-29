@@ -18,7 +18,7 @@ import { calculatePlsValueNumeric, validateInputAmount } from "../../Constants/U
 // Optimized: Use Zustand store for static price data
 import { useTokenStore } from "../../stores";
 
-const SwapComponent = ({ preselectToken }) => {
+const SwapComponent = ({ preselectToken, onSwapSuccess }) => {
   const { signer } = useContext(ContractContext);
   const chainId = useChainId();
   const TOKENS = useAllTokens();
@@ -48,6 +48,7 @@ const SwapComponent = ({ preselectToken }) => {
   const [confirmedAmountOut, setConfirmedAmountOut] = useState("");
   const [insufficientBalance, setInsufficientBalance] = useState(false);
   const [ratioOutPerIn, setRatioOutPerIn] = useState("");
+  const [showQuickAmounts, setShowQuickAmounts] = useState(false);
   const ratioTimerRef = useRef(null);
   const isActiveEntry = (amountIn && amountIn.trim() !== "");
 
@@ -389,12 +390,18 @@ const SwapComponent = ({ preselectToken }) => {
   };
 
   useEffect(() => {
-    if (showConfirmation) {
-      notifySuccess(`${confirmedAmountIn} ${getDisplaySymbol(TOKENS[tokenIn].symbol)} → ${confirmedAmountOut} ${getDisplaySymbol(TOKENS[tokenOut].symbol)} Swap Complete!`,
-      );
-      setShowConfirmation(false);
+    if (!showConfirmation) return;
+
+    notifySuccess(
+      `${confirmedAmountIn} ${getDisplaySymbol(TOKENS[tokenIn].symbol)} → ${confirmedAmountOut} ${getDisplaySymbol(TOKENS[tokenOut].symbol)} Swap Complete!`
+    );
+    setShowConfirmation(false);
+
+    // Auto-close the parent DEX modal (if provided) after the success toast is triggered.
+    if (typeof onSwapSuccess === "function") {
+      setTimeout(() => onSwapSuccess(), 250);
     }
-  }, [showConfirmation]);
+  }, [showConfirmation, confirmedAmountIn, confirmedAmountOut, tokenIn, tokenOut, TOKENS, onSwapSuccess]);
 
   const getDisplaySymbol = (symbol) => {
     if (!symbol) return '';
@@ -432,13 +439,45 @@ const SwapComponent = ({ preselectToken }) => {
   const getMaxAmount = () => {
     return tokenInBalance ? tokenInBalance.toString() : "";
   };
+
+  const getAmountFromPercent = (percent) => {
+    try {
+      if (!tokenInBalance || !TOKENS?.[tokenIn]) return "";
+      const decimals = Number(TOKENS[tokenIn]?.decimals ?? 18);
+      const cleaned = tokenInBalance.toString().replace(/,/g, "");
+      const balUnits = parseUnits(cleaned || "0", decimals);
+      const pct = BigInt(percent);
+      const amtUnits = (balUnits * pct) / 100n;
+      // formatUnits may return trailing zeros; keep as-is (user can edit)
+      return ethers.formatUnits(amtUnits, decimals);
+    } catch (e) {
+      // Fallback: float math (best-effort)
+      const bal = Number((tokenInBalance || "0").toString().replace(/,/g, ""));
+      if (!Number.isFinite(bal)) return "";
+      const amt = (bal * Number(percent)) / 100;
+      return amt > 0 ? amt.toString() : "0";
+    }
+  };
+
+  const applyQuickAmount = (kind) => {
+    if (isApproving || isSwapping) return;
+    const next = kind === "max" ? getMaxAmount() : getAmountFromPercent(kind);
+    handleInputChange(next);
+    setShowQuickAmounts(false);
+  };
   const handleCheckClick = async () => {
     try {
-      const calculated = Math.max(calculateTotalSum() * DaipriceChange, 0) / 100;
+      const pct = Number(DaipriceChange);
+      if (!Number.isFinite(pct)) {
+        notifyError("Liquidity Strength is still loading")
+        return;
+      }
 
-      if (DaipriceChange < 0 || calculated === 0) {
-        if (DaipriceChange < 0) {
-          notifyError(`Invalid amount: index value is negative (${DaipriceChange}%) for now`)
+      const calculated = Math.max(calculateTotalSum() * pct, 0) / 100;
+
+      if (pct < 0 || calculated === 0) {
+        if (pct < 0) {
+          notifyError(`Invalid amount: index value is negative (${pct}%) for now`)
         } else {
           notifyError("Invalid amount: get more state tokens")
         }
@@ -500,13 +539,86 @@ const SwapComponent = ({ preselectToken }) => {
                   ? `1 ${getFullTokenName(tokenIn)} ≈ ${Number(ratioOutPerIn).toFixed(6)} ${getFullTokenName(tokenOut)}`
                   : "Fetching ratio..."}
               </small>
-              <small
-                className="text-light"
-                style={{ cursor: (isApproving || isSwapping) ? "default" : "pointer", opacity: (isApproving || isSwapping) ? 0.7 : 1, fontWeight: 500, fontSize: '0.9rem' }}
-                onClick={(isApproving || isSwapping) ? undefined : () => setAmountIn(getMaxAmount())}
-              >
-                Bal: {tokenInBalance ? `${parseFloat(tokenInBalance).toFixed(2)}` : "-"}
-              </small>
+              <div className="d-flex align-items-center gap-2" style={{ position: "relative" }}>
+                <small
+                  className="text-light"
+                  style={{ opacity: (isApproving || isSwapping) ? 0.7 : 1, fontWeight: 500, fontSize: '0.9rem' }}
+                >
+                  Bal: {tokenInBalance ? `${parseFloat(tokenInBalance).toFixed(2)}` : "-"}
+                </small>
+
+                <div
+                  onMouseEnter={() => (!isApproving && !isSwapping) && setShowQuickAmounts(true)}
+                  onMouseLeave={() => setShowQuickAmounts(false)}
+                  style={{ position: "relative" }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => applyQuickAmount("max")}
+                    disabled={isApproving || isSwapping || !tokenInBalance}
+                    style={{
+                      border: "1px solid rgba(255,255,255,0.14)",
+                      background: "rgba(255,255,255,0.06)",
+                      color: "#39d353",
+                      borderRadius: 10,
+                      padding: "2px 10px",
+                      fontWeight: 800,
+                      fontSize: 13,
+                      lineHeight: 1.6,
+                      cursor: (isApproving || isSwapping || !tokenInBalance) ? "default" : "pointer",
+                    }}
+                    aria-label="Set max amount"
+                    title="Max (hover for % presets)"
+                  >
+                    MAX
+                  </button>
+
+                  {showQuickAmounts && !isApproving && !isSwapping && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "110%",
+                        right: 0,
+                        width: 72,
+                        background: "#0f0f10",
+                        border: "1px solid rgba(255,255,255,0.12)",
+                        borderRadius: 12,
+                        padding: 4,
+                        boxShadow: "0 12px 30px rgba(0,0,0,0.55)",
+                        zIndex: 20,
+                      }}
+                      role="menu"
+                      aria-label="Quick amount presets"
+                    >
+                      {[75, 50, 25].map((p) => (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => applyQuickAmount(p)}
+                          disabled={!tokenInBalance}
+                          style={{
+                            width: "100%",
+                            border: "none",
+                            background: "transparent",
+                            color: "#39d353",
+                            fontWeight: 800,
+                            fontSize: 14,
+                            lineHeight: 1.2,
+                            padding: "4px 6px",
+                            borderRadius: 10,
+                            textAlign: "right",
+                            cursor: tokenInBalance ? "pointer" : "default",
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.06)")}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                        >
+                          {p}%
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
 

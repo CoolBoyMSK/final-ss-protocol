@@ -61,8 +61,14 @@ const AuctionSection = () => {
     // Optimized: Use store for static price data
     const pstateToPlsRatio = useTokenStore(state => state.pstateToPlsRatio);
     const DaipriceChange = useTokenStore(state => state.DaipriceChange);
+    const daiPct = useMemo(() => {
+        if (DaipriceChange === null || DaipriceChange === undefined || DaipriceChange === '') return null;
+        const n = Number(DaipriceChange);
+        return Number.isFinite(n) ? n : null;
+    }, [DaipriceChange]);
     const [amount, setAmount] = useState("");
     const [Refferalamount, setReferralAmount] = useState("");
+    const [selectedDav, setSelectedDav] = useState("DAV1");
     const [load, setLoad] = useState(false);
     const [copied, setCopied] = useState(false);
     const [copiedCode, setCopiedCode] = useState("");
@@ -70,6 +76,14 @@ const AuctionSection = () => {
     const [isGov, setIsGov] = useState(false);
     // Worker-based AMM estimate (null = not calculated yet)
     const [ammEstimatedPls, setAmmEstimatedPls] = useState(null);
+
+    const davVariantInfo = useMemo(() => ({
+        DAV1: { label: "JP Morgain (DAV1)", costPls: 3_000_000, userLimit: 2500, yieldPct: 30, comingSoon: false },
+        DAV2: { label: "GM Sachs (DAV2)", costPls: null, userLimit: null, yieldPct: null, comingSoon: true },
+        DAV3: { label: "Deutsche Bros (DAV3)", costPls: null, userLimit: null, yieldPct: null, comingSoon: true },
+    }), []);
+
+    const selectedDavInfo = davVariantInfo[selectedDav] || davVariantInfo.DAV1;
 
     useEffect(() => {
         let cancelled = false;
@@ -107,6 +121,10 @@ const AuctionSection = () => {
 
     const handleMint = () => {
         // Pre-validations for better UX
+        if (selectedDav !== "DAV1") {
+            notifyError("DAV 2 / DAV 3 are coming soon");
+            return;
+        }
         if (!amount || amount.trim() === "") {
             notifyError("Enter mint amount");
             return;
@@ -250,6 +268,10 @@ const AuctionSection = () => {
         setReferralAmount(e.target.value);
     };
 
+    const handleDavSelectChange = (e) => {
+        setSelectedDav(e.target.value);
+    };
+
     useEffect(() => {
         CalculationOfCost(amount);
     }, [CalculationOfCost, amount]);
@@ -325,19 +347,26 @@ const AuctionSection = () => {
                                 </label>
                             </div>
                         </div>
-                        <h5 className="detailAmount">1 DAV TOKEN = {formatWithCommas(DavMintFee)} {nativeSymbol}</h5>
-                        {/* Dynamically show total PLS = amount * DavMintFee for instant feedback */}
-                        <h5 className="detailAmount mb-4">
-                            {(() => {
-                                const qty = Number(amount || 0);
-                                const fee = parseFloat(DavMintFee || "0");
-                                if (!qty || !fee) return "0";
-                                const total = qty * fee;
-                                // Use more decimals for very small fees to avoid showing 0
-                                const decimals = fee < 1 ? 4 : 2;
-                                return `${formatWithCommas(total.toFixed(decimals))}`;
-                            })()} {nativeSymbol}
-                        </h5>
+
+                        <div className="mt-2 mb-2 d-flex justify-content-center align-items-center">
+                            <div className="floating-input-container" style={{ maxWidth: "300px" }}>
+                                <select
+                                    id="davSelect"
+                                    className="form-control text-center filled"
+                                    value={selectedDav}
+                                    onChange={handleDavSelectChange}
+                                    style={{ height: "38px", color: "#ffffff", fontWeight: 400 }}
+                                >
+                                    <option value="DAV1">JP Morgain (DAV1)</option>
+                                    <option value="DAV2">GM Sachs (DAV2) (Coming Soon)</option>
+                                    <option value="DAV3">Deutsche Bros (DAV3) (Coming Soon)</option>
+                                </select>
+                                <label htmlFor="davSelect" className="floating-label">
+                                    Select DAV
+                                </label>
+                            </div>
+                        </div>
+                        <div className="mb-2" />
 
                         <div className="d-flex justify-content-center">
                             <button
@@ -419,8 +448,8 @@ const AuctionSection = () => {
                                                 }
                                             }, 100);
                                         }}
-                                        className="btn btn-primary d-flex btn-sm justify-content-center align-items-center mx-5 mt-4"
-                                        style={{ width: "190px" }}
+                                        className="btn btn-primary d-flex btn-sm justify-content-center align-items-center mx-5"
+                                        style={{ width: "190px", marginTop: "1.85rem" }}
                                         disabled={Number(claimableAmount) === 0 || isClaiming}
                                     >
                                         {isClaiming ? "Claiming..." : "Claim"}
@@ -436,52 +465,43 @@ const AuctionSection = () => {
                             <div className="carddetaildiv uppercase d-flex justify-content-between align-items-center">
                                 <div className="carddetails2">
                                     <p className="mb-1">
-                                        <span className="detailText">
-                                            State Token Holding -{" "}
+                                        <span className="detailText">{selectedDavInfo.label} = </span>
+                                        <span className="second-span-fontsize">
+                                            {selectedDavInfo.costPls === null ? "Coming Soon" : `${formatWithCommas(selectedDavInfo.costPls)} ${nativeSymbol}`}
                                         </span>
-                                        <span className="second-span-fontsize">{formatWithCommas(stateHolding)}</span>
                                     </p>
                                     <p className="mb-1">
-                                        <span className="detailText">Affiliate com received - </span>
-                                        <span className="second-span-fontsize">{formatWithCommas(ReferralAMount)} {nativeSymbol}</span>
+                                        <span className="detailText">User Limit = </span>
+                                        <span className="second-span-fontsize">
+                                            {selectedDavInfo.userLimit === null ? "Coming Soon" : `${formatWithCommas(selectedDavInfo.userLimit)} wallet`}
+                                        </span>
+                                    </p>
+                                    <p className="mb-1">
+                                        <span className="detailText">Yield = </span>
+                                        <span className="second-span-fontsize">
+                                            {selectedDavInfo.yieldPct === null ? "Coming Soon" : `${formatWithCommas(selectedDavInfo.yieldPct)}%`}
+                                        </span>
                                     </p>
                                     <p className="mb-1 ">
                                         <span className="detailText">Your Affiliate Link - </span>
-                                        <span className="second-span-fontsize" style={{ textTransform: "none" }}>{ReferralCodeOfUser}</span>
-                                        <button
-                                            onClick={() => {
-                                                navigator.clipboard.writeText(ReferralCodeOfUser);
-                                                setCopied(true);
-                                                setCopiedCode(ReferralCodeOfUser);
-                                                setTimeout(() => setCopied(false), 2000);
-                                            }}
-                                            className="btn btn-outline-light btn-sm py-0 px-2 mx-2"
-                                            style={{ fontSize: "14px" }}
-                                            title={copied ? "Copied!" : "Copy"}
-                                        >
-                                            <FontAwesomeIcon icon={copied ? faCheck : faCopy} />
-                                        </button>
-                                    </p>
-                                    <p className="mb-1">
-                                        <span className="detailText">ROI / {nativeSymbol} -</span>
-                                        <span className="ms-1 second-span-fontsize">
-                                            {(isLoading && requiredPlsValue === 0 && estimatedPlsValue === 0) ? (
-                                                <DotAnimation />
-                                            ) : (
-                                                <>
-                                                    {formatWithCommas(String(requiredPlsValue || 0))} / {""}
-                                                    <span style={{ color: (roiMeets === 'true' || roiMeets === true || (estimatedPlsValue >= requiredPlsValue && requiredPlsValue > 0)) ? '#28a745' : '#ff4081' }}>
-                                                        {formatWithCommas(String(Number.isFinite(estimatedPlsValue) ? Math.trunc(estimatedPlsValue) : 0))} {nativeSymbol}
-                                                    </span>
-                                                </>
-                                            )}
+                                        <span className="second-span-fontsize" style={{ textTransform: "none" }}>
+                                            {selectedDavInfo.comingSoon ? "COMING SOON" : ReferralCodeOfUser}
                                         </span>
-                                    </p>
-                                    <p className="mb-1">
-                                        <span className="detailText">USER ROI % -</span>
-                                        <span className="ms-1 second-span-fontsize" style={{ color: roiPctDisplay >= 100 ? '#28a745' : '#ff4081' }}>
-                                            {(isLoading && roiPctDisplay === '0') ? <DotAnimation /> : formatWithCommas(roiPctDisplay)} %
-                                        </span>
+                                        {!selectedDavInfo.comingSoon ? (
+                                            <button
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(ReferralCodeOfUser);
+                                                    setCopied(true);
+                                                    setCopiedCode(ReferralCodeOfUser);
+                                                    setTimeout(() => setCopied(false), 2000);
+                                                }}
+                                                className="btn btn-outline-light btn-sm py-0 px-2 mx-2"
+                                                style={{ fontSize: "14px" }}
+                                                title={copied ? "Copied!" : "Copy"}
+                                            >
+                                                <FontAwesomeIcon icon={copied ? faCheck : faCopy} />
+                                            </button>
+                                        ) : null}
                                     </p>
 
                                     {/* USER APR removed as requested */}

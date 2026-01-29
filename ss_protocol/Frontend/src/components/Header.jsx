@@ -49,24 +49,17 @@ const Header = () => {
                 </NavLink>
               </li>
               <li className="nav-item mx-2">
-                <NavLink className={getNavLinkClass} to="/live-auction">
+                <NavLink className={getNavLinkClass} to="/auction">
                   Auction
                 </NavLink>
               </li>
               
               {/* Add Token moved under Admin; removed from public nav */}
               {/* Deflation removed */}
-              <li className="nav-item mx-2 dropdown">
-                <NavLink className={getNavLinkDropdownClass} to="/info">
-                  DAV Vault
+              <li className="nav-item mx-2">
+                <NavLink className={getNavLinkClass} to="/dav-history">
+                  DAV History
                 </NavLink>
-                <ul className="dropdown-menu custom-dropdown-menu bg-dark border-0 shadow">
-                  <li>
-                    <NavLink className="dropdown-item text-light" to="/dav-history">
-                      DAV History
-                    </NavLink>
-                  </li>
-                </ul>
               </li>
               {!govLoading && isGovernance && (
                 <li className="nav-item mx-2">
@@ -99,15 +92,15 @@ const Header = () => {
           <i className="bi bi-coin"></i>
           <div>DAV Mint</div>
         </NavLink>
-        <NavLink to="/live-auction" className={getMobileNavLinkClass}>
+        <NavLink to="/auction" className={getMobileNavLinkClass}>
           <i className="bi bi-hammer"></i>
           <div>Auction</div>
         </NavLink>
         
         {/* Deflation removed from mobile nav */}
-        <NavLink to="/info" className={getMobileNavLinkClass}>
-          <i className="bi bi-info-circle"></i>
-          <div>DAV Vault</div>
+        <NavLink to="/dav-history" className={getMobileNavLinkClass}>
+          <i className="bi bi-clock-history"></i>
+          <div>DAV History</div>
         </NavLink>
         <NavLink
           target="_blank"

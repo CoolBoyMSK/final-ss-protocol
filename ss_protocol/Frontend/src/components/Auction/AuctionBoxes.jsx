@@ -10,14 +10,14 @@ import { ContractContext } from "../../Functions/ContractInitialize";
 import { useAllTokens } from "../Swap/Tokens";
 import { useDAvContract } from "../../Functions/DavTokenFunctions";
 import { useStatePoolAddress } from "../../Functions/useStatePoolAddress";
-import { getSTATEContractAddress } from "../../Constants/ContractAddresses";
+import { getDAVContractAddress, getSTATEContractAddress } from "../../Constants/ContractAddresses";
 import { ERC20_ABI } from "../../Constants/Constants";
+import { chainCurrencyMap } from "../../../WalletConfig";
 import toast from "react-hot-toast";
-import MetaMaskIcon from "../../assets/metamask-icon.png";
 import NormalAuctionBox from "./NormalAuctionBox";
 import ReverseAuctionBox from "./ReverseAuctionBox";
 
-const AuctionBoxes = () => {
+const AuctionBoxes = ({ uiVariant } = {}) => {
 		// Use Zustand stores for data that changes frequently (reduces re-renders)
 		const todayTokenAddress = useAuctionStore(state => state.todayTokenAddress) || "";
 		const todayTokenSymbol = useAuctionStore(state => state.todayTokenSymbol) || "";
@@ -30,6 +30,13 @@ const AuctionBoxes = () => {
 		const IsAuctionActive = useTokenStore(state => state.isAuctionActive) || {};
 		const TokenRatio = useTokenStore(state => state.tokenRatios) || {};
 		const tokenMap = useTokenStore(state => state.tokenMap);
+		const DaipriceChange = useTokenStore(state => state.DaipriceChange);
+		const daiPct = useMemo(() => {
+			const raw = DaipriceChange;
+			if (raw === null || raw === undefined || raw === '') return null;
+			const n = Number(raw);
+			return Number.isFinite(n) ? n : null;
+		}, [DaipriceChange]);
 		
 		const userHashSwapped = useUserStore(state => state.userHasSwapped) || {};
 		const userHasBurned = useUserStore(state => state.userHasBurned) || {};
@@ -55,12 +62,44 @@ const AuctionBoxes = () => {
 			getOutPutAmount,
 			getTokenRatio,
 		} = useSwapContract();
-		const { davHolds = "0", davExpireHolds = "0" } = useDAvContract() || {};
+		const {
+			davHolds = "0",
+			davExpireHolds = "0",
+			stateHolding,
+			DavMintFee,
+			totalInvestedPls,
+			ReferralAMount,
+			ReferralCodeOfUser,
+			roiTotalValuePls,
+			roiRequiredValuePls,
+			roiMeets,
+			roiPercentage,
+		} = useDAvContract() || {};
 		const { tokens } = useAuctionTokens();
 		const { signer, AllContracts } = useContext(ContractContext);
 		const { address } = useAccount();
 		const chainId = useChainId();
 		const TOKENS = useAllTokens();
+		const nativeSymbol = chainCurrencyMap[chainId] || 'PLS';
+		const davTokenAddress = useMemo(() => getDAVContractAddress(chainId), [chainId]);
+		const addDavToMetaMask = useCallback(() => {
+			// Separate button in the RIGHT header: adds pDAV1 (DAV token) to MetaMask
+			handleAddToken(davTokenAddress, 'pDAV1', 18);
+		}, [handleAddToken, davTokenAddress]);
+		const plsIndexValue = useMemo(() => {
+			const pct = daiPct ?? 0;
+			const base = Number(String(totalInvestedPls ?? 0).replace(/,/g, ''));
+			const v = Math.max(base * pct, 0) / 100;
+			return Number.isFinite(v) ? v : 0;
+		}, [daiPct, totalInvestedPls]);
+		const bbModeLabel = useMemo(() => {
+			const pct = daiPct;
+			if (pct === null) return '--';
+			// 1% to 5% = B&B On, above 5% = B&B Off
+			if (pct > 5) return 'Off';
+			if (pct >= 1) return 'On';
+			return 'Off';
+		}, [daiPct]);
 
 	// Remove local todaySymbol/todayName/todayAddress/todayDecimals state
 	// Use centralized values from context instead
@@ -579,6 +618,9 @@ const fullTokenName = (selected?.name && selected?.name !== selected?.id ? selec
 
 	// Resolve completion flags (re-using logic applied to checkmarks later)
 	const completionFlags = useMemo(() => {
+		// Only show checkmarks when the wallet has an ACTIVE (non-expired) DAV balance.
+		// This prevents stale Step-1 flags from showing ticks for no-DAV / expired-DAV wallets.
+		const hasActiveDav = Number.parseFloat(davHolds || "0") > 0;
 		const idKey = selected?.id || todayTokenSymbol || '';
 		const addrKey = (TOKENS?.[selected?.id]?.address) || selected?.address || todayTokenAddress || '';
 		const claimedOnce = resolveFlag(AirdropClaimed, idKey, addrKey);
@@ -586,13 +628,13 @@ const fullTokenName = (selected?.name && selected?.name !== selected?.id ? selec
 		// the on-chain flag reports it happened at least once. We no longer
 		// gate ticks on remaining DAV units or pending STATE, which caused
 		// checkmarks to disappear even after successful completion.
-		const doneAirdrop = claimedOnce;
+		const doneAirdrop = hasActiveDav && claimedOnce;
 		const burnedOnce = resolveFlag(userHasBurned, idKey, addrKey);
 		const doneRatioSwap = burnedOnce;
 		const swappedOnce = resolveFlag(userHashSwapped, idKey, addrKey);
 		const doneDexSwap = swappedOnce;
 		return { doneAirdrop, doneRatioSwap, doneDexSwap };
-	}, [selected?.id, todayTokenSymbol, todayTokenAddress, TOKENS, AirdropClaimed, userHasBurned, userHashSwapped]);
+	}, [davHolds, selected?.id, todayTokenSymbol, todayTokenAddress, TOKENS, AirdropClaimed, userHasBurned, userHashSwapped]);
 
 	// Convenient flag for render-time decisions (show snapshots only while all steps remain completed)
 	const allDone = completionFlags.doneAirdrop && completionFlags.doneRatioSwap && completionFlags.doneDexSwap;
@@ -663,6 +705,7 @@ const fullTokenName = (selected?.name && selected?.name !== selected?.id ? selec
 	// If user has unused DAV (new purchases or not yet used): show only unused
 	// If all DAV is consumed: show the consumed amount
 	const displayDavUnits = unusedDavUnits > 0 ? unusedDavUnits : consumedDavUnits;
+	const hasActiveDav = activeDav > 0;
 	
 	// Calculate display amounts based on the chosen DAV units
 	const displayAirdropAmount = displayDavUnits * Number(claimPerUnit || 0);
@@ -844,8 +887,12 @@ useEffect(() => {
 
 							return (
 							<div className="auction-boxes">
-										{isReverse ? (
+								<div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", width: "100%" }}>
+									{isReverse ? (
 					    <ReverseAuctionBox
+											uiVariant={uiVariant}
+											headerRightLabel={uiVariant === 'davVault' ? 'pDAV1' : undefined}
+											onHeaderRightAction={uiVariant === 'davVault' ? addDavToMetaMask : undefined}
 						    headerTitle={headerTitle}
 					    ratioText={ratioTextReverse}
 										onReverseSwap={doReverseSwap}
@@ -879,6 +926,9 @@ useEffect(() => {
 								/>
 								) : (
 									<NormalAuctionBox
+										uiVariant={uiVariant}
+										headerRightLabel={uiVariant === 'davVault' ? 'pDAV1' : undefined}
+										onHeaderRightAction={uiVariant === 'davVault' ? addDavToMetaMask : undefined}
 										headerTitle={headerTitle}
 										airdropText={airdropText}
 										ratioText={ratioTextNormal}
@@ -892,21 +942,88 @@ useEffect(() => {
 										doneAirdrop={(() => {
 											const idKey = selected?.id || todayTokenSymbol || '';
 											const addrKey = (TOKENS?.[selected?.id]?.address) || selected?.address || todayTokenAddress || '';
-											return resolveFlag(AirdropClaimed, idKey, addrKey);
+										return hasActiveDav && resolveFlag(AirdropClaimed, idKey, addrKey);
 										})()}
 											doneRatioSwap={(() => {
 												const idKey = selected?.id || todayTokenSymbol || '';
 												const addrKey = (TOKENS?.[selected?.id]?.address) || selected?.address || todayTokenAddress || '';
-												return resolveFlag(userHasBurned, idKey, addrKey);
+											return hasActiveDav && resolveFlag(userHasBurned, idKey, addrKey);
 											})()}
 										doneDexSwap={(() => {
 											const idKey = selected?.id || todayTokenSymbol || '';
 											const addrKey = (TOKENS?.[selected?.id]?.address) || selected?.address || todayTokenAddress || '';
-											return resolveFlag(userHashSwapped, idKey, addrKey);
+											return hasActiveDav && resolveFlag(userHashSwapped, idKey, addrKey);
 										})()}
 									/>
 								)}
+								{uiVariant === "davVault" ? (
+									<div
+										className="text-light"
+										style={{
+											padding: "0 50px 0",
+											marginTop: "-30px",
+											maxWidth: 420,
+											width: "100%",
+										}}
+									>
+										<div
+											style={{
+												border: "1px solid #ffffff26",
+												borderRadius: 10,
+												background: "#212529",
+												padding: "10px 12px",
+											}}
+										>
+											<p className="mb-1">
+												<span className="detailText">State Token Holding - </span>
+												<span className="second-span-fontsize">{formatWithCommas(stateHolding)}</span>
+											</p>
+											<p className="mb-1">
+												<span className="detailText">Affiliate com received - </span>
+												<span className="second-span-fontsize">{formatWithCommas(ReferralAMount)} {nativeSymbol}</span>
+											</p>
+											<p className="mb-1">
+												<span className="detailText">ROI / {nativeSymbol} -</span>
+												<span className="ms-1 second-span-fontsize">
+													{formatWithCommas(String(roiRequiredValuePls || 0))} / {""}
+													<span
+														style={{
+															color: (roiMeets === 'true' || roiMeets === true) ? '#28a745' : '#ff4081',
+														}}
+													>
+														{formatWithCommas(String(roiTotalValuePls || 0))} {nativeSymbol}
+													</span>
+												</span>
+											</p>
+											<p className="mb-1">
+												<span className="detailText">USER ROI % -</span>
+												<span
+													className="ms-1 second-span-fontsize"
+													style={{ color: Number(roiPercentage || 0) >= 100 ? '#28a745' : '#ff4081' }}
+												>
+													{formatWithCommas(String(roiPercentage || 0))} %
+												</span>
+											</p>
+												<p className="mb-1">
+													<span className="detailText">Liquidity Strength -</span>
+													<span className="ms-1 second-span-fontsize">
+														<span
+															style={{
+																	color: (daiPct ?? 0) > 0 ? '#28a745' : (daiPct ?? 0) < 0 ? '#ff4081' : '#ffffff'
+															}}
+														>
+																{daiPct === null ? 'Loading...' : `${formatWithCommas(String(daiPct))} %`}
+														</span>{" "}
+															( B&B {bbModeLabel} )
+														{/* PLS value hidden as requested */}
+														{/* {formatWithCommas(plsIndexValue.toFixed(2))} {nativeSymbol} */}
+													</span>
+												</p>
+										</div>
+									</div>
+								) : null}
 								{noTokens && null}
+							</div>
 							</div>
 						);
 };

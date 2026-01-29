@@ -181,6 +181,16 @@
   caret-color: #ffffff; /* Ensure blinking cursor is visible and white */
 }
 
+/* /davpage: keep DAV selector text consistent with other inputs */
+.floating-input-container #davSelect {
+  font-size: 14px !important;
+  font-weight: 400 !important;
+}
+.floating-input-container #davSelect option {
+  font-size: 14px !important;
+  font-weight: 400 !important;
+}
+
 .form-control:focus {
   background-color: #212529;
   border-color: #ffffff;

@@ -41,6 +41,40 @@ body {
   line-height: 1.5;
 }
 
+/* Shared pill button styling used across pages (matches auction action button vibe) */
+.ss-pill-btn {
+  border-radius: 9999px !important;
+  text-transform: none !important;
+  font-family: 'Satoshi', sans-serif;
+  font-weight: 600;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ss-pill-btn:focus,
+.ss-pill-btn:focus-visible,
+.ss-pill-btn:active {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.ss-pill-btn.btn-primary,
+.ss-pill-btn.btn-primary:hover,
+.ss-pill-btn.btn-primary:active,
+.ss-pill-btn.btn-primary:focus,
+.ss-pill-btn.btn-primary:focus-visible {
+  background: linear-gradient(90deg, #2575fc 0%, #6a11cb 100%) !important;
+  border-color: transparent !important;
+}
+
+.ss-pill-btn.btn-dark,
+.ss-pill-btn.btn-dark:hover,
+.ss-pill-btn.btn-dark:active,
+.ss-pill-btn.btn-dark:focus,
+.ss-pill-btn.btn-dark:focus-visible {
+  background-color: var(--secondary-bg) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
 a {
   color: var(--accent-color);
   text-decoration: none;

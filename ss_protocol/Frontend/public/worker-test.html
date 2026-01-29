@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Worker Test</title>
+</head>
+<body>
+  <h1>STATE Out Worker Test</h1>
+  <button id="testBtn">Test Worker</button>
+  <div id="output" style="white-space: pre-wrap; font-family: monospace;"></div>
+  
+  <script type="module">
+    const output = document.getElementById('output');
+    const btn = document.getElementById('testBtn');
+    
+    function log(msg) {
+      output.textContent += msg + '\n';
+      console.log(msg);
+    }
+    
+    btn.onclick = async () => {
+      log('Creating worker...');
+      
+      try {
+        // Test the worker inline
+        const workerCode = `
+          const RPC_ENDPOINTS = [
+            'https://rpc.pulsechain.com',
+            'https://pulsechain-rpc.publicnode.com'
+          ];
+          
+          const TOKENS_SWAPPED_TOPIC = '0xad56699d0f375866eb895ed27203058a36a713382aaded78eb6b67da266d4332';
+          const STATE_TOPIC_PADDED = '0x0000000000000000000000004e90670b4cde8ff7cddeeaf99aefd68a114d9c01';
+          const SWAP_V3 = '0x8172716bD7117461D4b20bD0434358F74244d4ec';
+          
+          async function rpcCall(method, params) {
+            const response = await fetch(RPC_ENDPOINTS[0], {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ jsonrpc: '2.0', method, params, id: 1 })
+            });
+            const data = await response.json();
+            return data.result;
+          }
+          
+          self.onmessage = async (e) => {
+            try {
+              self.postMessage({ type: 'LOG', msg: 'Worker received message: ' + e.data.type });
+              
+              // Get current block
+              const blockHex = await rpcCall('eth_blockNumber', []);
+              const currentBlock = parseInt(blockHex, 16);
+              self.postMessage({ type: 'LOG', msg: 'Current block: ' + currentBlock });
+              
+              // Get logs from last 10000 blocks
+              const fromBlock = currentBlock - 10000;
+              self.postMessage({ type: 'LOG', msg: 'Fetching logs from block ' + fromBlock });
+              
+              const logs = await rpcCall('eth_getLogs', [{
+                address: SWAP_V3.toLowerCase(),
+                fromBlock: '0x' + fromBlock.toString(16),
+                toBlock: 'latest',
+                topics: [TOKENS_SWAPPED_TOPIC, null, null, STATE_TOPIC_PADDED]
+              }]);
+              
+              self.postMessage({ type: 'LOG', msg: 'Found ' + (logs?.length || 0) + ' events' });
+              
+              // Sum amountOut
+              let total = 0n;
+              for (const log of (logs || [])) {
+                if (log.data && log.data.length >= 130) {
+                  const amountOutHex = log.data.slice(66, 130);
+                  total += BigInt('0x' + amountOutHex);
+                }
+              }
+              
+              // Convert to ether
+              const weiStr = total.toString().padStart(19, '0');
+              const eth = parseFloat(weiStr.slice(0, -18) + '.' + weiStr.slice(-18));
+              
+              self.postMessage({ type: 'RESULT', total: eth, events: logs?.length || 0 });
+            } catch (err) {
+              self.postMessage({ type: 'ERROR', error: err.message });
+            }
+          };
+          
+          self.postMessage({ type: 'READY' });
+        `;
+        
+        const blob = new Blob([workerCode], { type: 'application/javascript' });
+        const worker = new Worker(URL.createObjectURL(blob));
+        
+        worker.onmessage = (e) => {
+          if (e.data.type === 'READY') {
+            log('Worker ready, sending calculate command...');
+            worker.postMessage({ type: 'CALCULATE' });
+          } else if (e.data.type === 'LOG') {
+            log('Worker: ' + e.data.msg);
+          } else if (e.data.type === 'RESULT') {
+            log('\\n=== RESULT ===');
+            log('Total STATE Out: ' + e.data.total.toLocaleString() + ' STATE');
+            log('Events found: ' + e.data.events);
+            worker.terminate();
+          } else if (e.data.type === 'ERROR') {
+            log('ERROR: ' + e.data.error);
+            worker.terminate();
+          }
+        };
+        
+        worker.onerror = (e) => {
+          log('Worker error: ' + e.message);
+        };
+        
+      } catch (err) {
+        log('Error: ' + err.message);
+      }
+    };
+  </script>
+</body>
+</html>

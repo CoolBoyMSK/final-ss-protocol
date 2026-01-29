@@ -121,7 +121,7 @@ export const useTokenStore = create(
     
     // Price data (use both casing for compatibility)
     pstateToPlsRatio: '0.0',
-    DaipriceChange: '0.0', // Alias for context compatibility
+    DaipriceChange: '', // Alias for context compatibility (empty until live fetch)
     
     // Actions
     setTokenNames: (names) => set({ tokenNames: names }),

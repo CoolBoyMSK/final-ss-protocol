@@ -108,7 +108,9 @@ export const SwapContractProvider = ({ children }) => {
   const [txStatusForSwap, setTxStatusForSwap] = useState("");
   const [txStatusForAdding, setTxStatusForAdding] = useState("");
   const [TotalCost, setTotalCost] = useState(null);
-  const [DaipriceChange, setDaiPriceChange] = useState("0.0");
+  // Live-fetched (Gecko) 24h price change percentage used by "Liquidity Strength" UI.
+  // Keep empty until fetched to avoid showing an incorrect initial 0%.
+  const [DaipriceChange, setDaiPriceChange] = useState("");
   const [InputAmount, setInputAmount] = useState({});
   const [AirDropAmount, setAirdropAmount] = useState("0.0");
   const [AuctionTime, setAuctionTime] = useState({});
@@ -2383,6 +2385,7 @@ export const SwapContractProvider = ({ children }) => {
       getTokensBurned,          // Burned amounts
       getPairAddresses,         // Pair addresses
       isTokenSupporteed,        // Supported status
+      fetchDaiLastPrice,        // Liquidity Strength source (run early to avoid long 0% period)
     ];
 
     // TERTIARY DATA - Least critical, load last
@@ -2390,7 +2393,6 @@ export const SwapContractProvider = ({ children }) => {
       getInputAmount,
       getOutPutAmount,
       getAirdropAmount,
-      fetchDaiLastPrice,
       AddressesFromContract,
       isRenounced,
       getTokenNamesForUser,
@@ -2431,6 +2433,7 @@ export const SwapContractProvider = ({ children }) => {
           getInputAmount,
           getOutPutAmount,
           getAirdropAmount,
+          fetchDaiLastPrice,
           CheckIsAuctionActive,
           CheckIsReverse,
         ];
@@ -4696,22 +4699,64 @@ export const SwapContractProvider = ({ children }) => {
 
   const fetchDaiLastPrice = async () => {
     try {
-  const chainForGecko = getRuntimeConfigSync()?.network?.chainId || 369;
-  const wplsAddr = (getRuntimeConfigSync()?.dex?.baseToken?.address) || WPLS_ADDRESS;
-  const url = geckoPoolsForTokenApiUrl(chainForGecko, (wplsAddr || '').toLowerCase(), 1);
-  const response = await fetch(url);
+      const chainForGecko = getRuntimeConfigSync()?.network?.chainId || 369;
+      const wplsAddr = (getRuntimeConfigSync()?.dex?.baseToken?.address) || WPLS_ADDRESS;
+      const url = geckoPoolsForTokenApiUrl(chainForGecko, (wplsAddr || '').toLowerCase(), 1);
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: { accept: 'application/json' },
+        cache: 'no-store',
+      });
+      clearTimeout(timeoutId);
+
       if (!response.ok) throw new Error('Failed to fetch DAI price');
       const data = await response.json();
       // Take the first pool result
-      const pool = data.data[0];
-      const priceChange24h = pool.attributes.price_change_percentage.h24;
+      const pool = data?.data?.[0];
+      const priceChange24h = pool?.attributes?.price_change_percentage?.h24;
+      const parsed = Number(priceChange24h);
+      if (!Number.isFinite(parsed)) {
+        throw new Error('Invalid price_change_percentage.h24 from Gecko response');
+      }
 
-      console.log("DAI 24h price change %:", priceChange24h);
-      setDaiPriceChange(priceChange24h);
+      // Store as string for consistent UI rendering and store batching.
+      setDaiPriceChange(String(parsed));
     } catch (error) {
-      console.error("Error fetching DAI price:", error);
+      // Don’t overwrite with 0.0 on failure; keep last known value.
+      console.warn("Error fetching DAI price:", error);
     }
   }
+
+  // Fetch Liquidity Strength source ASAP (independent of staged refresh).
+  // Keeps UI responsive even if RPC calls in staged refresh are slow.
+  useEffect(() => {
+    if (loading) return;
+    let cancelled = false;
+
+    const run = () => {
+      if (cancelled) return;
+      fetchDaiLastPrice();
+    };
+
+    run();
+
+    const onVis = () => {
+      if (document.hidden) return;
+      run();
+    };
+
+    const intervalId = setInterval(run, 90000);
+    try { document.addEventListener('visibilitychange', onVis); } catch {}
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+      try { document.removeEventListener('visibilitychange', onVis); } catch {}
+    };
+  }, [loading]);
 
   // ============ ZUSTAND STORE SYNC ============
   // Sync React Context state to Zustand stores for gradual migration

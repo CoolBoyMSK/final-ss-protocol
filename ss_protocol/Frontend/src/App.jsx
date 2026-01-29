@@ -8,7 +8,6 @@ import DataTable from "./components/DataTable";
 import DetailsInfo from "./components/DetailsInfo";
 import InfoPage from "./components/Info/InfoPage";
 import AuctionBoxes from "./components/Auction/AuctionBoxes";
-import LiveAuctionPage from "./components/Auction/LiveAuctionPage";
 import {
   BrowserRouter as Router,
   Routes,
@@ -20,7 +19,7 @@ import Footer from "./components/Footer";
 import DavHistory from "./components/DavHistory";
 import SwapComponent from "./components/Swap/SwapModel";
 import AdminLayout from "./components/admin/AdminLayout";
-import DiagnosticsPage from "./pages/DiagnosticsPage";
+import DavVaultPage from "./pages/DavVaultPage";
 import { useGovernanceGate } from "./components/admin/useGovernanceGate";
 import { startMemoryMonitor, performMemoryCleanup } from "./utils/memoryCleanup";
 
@@ -90,15 +89,10 @@ const App = () => {
                   </>
                 }
               />
-              {/* Legacy route redirect for backward compatibility */}
-              <Route path="/auction" element={<Navigate to="/davpage" replace />} />
-              {/* New Auction page (live auction focus) */}
-              <Route
-                path="/live-auction"
-                element={
-                  <LiveAuctionPage />
-                }
-              />
+              {/* /auction is now the canonical Dav Vault page */}
+              <Route path="/auction" element={<DavVaultPage />} />
+              {/* /live-auction hidden: keep redirect for backward compatibility */}
+              <Route path="/live-auction" element={<Navigate to="/auction" replace />} />
               <Route
                 path="/Deflation"
                 element={<Navigate to="/auction" replace />}
@@ -106,7 +100,10 @@ const App = () => {
               {/* Legacy AddToken routes redirected to Admin Tokens */}
               <Route path="/ADDToken" element={<Navigate to="/admin/tokens" replace />} />
               <Route path="/AddToken" element={<Navigate to="/admin/tokens" replace />} />
-              <Route path="/info" element={<InfoPage />} />
+              {/* /info (legacy list page) hidden: redirect to DAV History */}
+              <Route path="/info" element={<Navigate to="/dav-history" replace />} />
+              {/* Backward compatibility: old Dav Vault URL */}
+              <Route path="/dav-vault" element={<Navigate to="/auction" replace />} />
               <Route
                 path="/dav-history"
                 element={
@@ -130,14 +127,6 @@ const App = () => {
                   ) : (
                     <Navigate to="/davpage" replace />
                   )
-                }
-              />
-              <Route
-                path="/diagnostics"
-                element={
-                  <>
-                    <DiagnosticsPage />
-                  </>
                 }
               />
             </Routes>

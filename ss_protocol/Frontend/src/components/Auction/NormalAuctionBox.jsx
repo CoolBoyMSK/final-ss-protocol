@@ -3,6 +3,8 @@ import MetaMaskIcon from "../../assets/metamask-icon.png";
 
 const NormalAuctionBox = ({
   headerTitle,
+  headerRightLabel,
+  onHeaderRightAction,
   airdropText,
   ratioText,
   onClaim,
@@ -15,7 +17,9 @@ const NormalAuctionBox = ({
   doneAirdrop,
   doneRatioSwap,
   doneDexSwap,
+  uiVariant,
 }) => {
+  const isDavVaultVariant = uiVariant === "davVault";
   // Inline critical sizing to prevent FOUC and lock size permanently
   const frameStyle = {
     width: "100%",
@@ -34,10 +38,44 @@ const NormalAuctionBox = ({
   <div className="col-12 p-0 auction-col">
   <div className={`auction-frame normal-fixed`} style={frameStyle}>
           <div className="auction-header d-flex align-items-center justify-content-between">
-            <div className="text-start">{headerTitle}</div>
-            <div className="text-end">
-              <span className="accent-label">Ratio Swap</span>
+            <div className="text-start" style={{ minWidth: 0 }}>
+              <div className="d-flex align-items-center gap-2" style={{ minWidth: 0 }}>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{headerTitle}</span>
+                {isDavVaultVariant && typeof onAddToMetaMask === "function" ? (
+                  <button
+                    type="button"
+                    className="btn btn-link text-light p-0"
+                    style={{ textDecoration: "none", lineHeight: 1 }}
+                    onClick={onAddToMetaMask}
+                    title="Add token to MetaMask"
+                    aria-label="Add token to MetaMask"
+                  >
+                    <img src={MetaMaskIcon} alt="MetaMask" style={{ width: 18, height: 18, objectFit: "contain" }} />
+                  </button>
+                ) : null}
+              </div>
             </div>
+            {!isDavVaultVariant ? (
+              <div className="text-end">
+                <span className="accent-label">Ratio Swap</span>
+              </div>
+            ) : (headerRightLabel && typeof onHeaderRightAction === "function") ? (
+              <div className="text-end" style={{ flex: "0 0 auto", paddingRight: 6 }}>
+                <div className="d-flex align-items-center gap-2">
+                  <span style={{ fontSize: 12, fontWeight: 400, opacity: 0.9 }}>{headerRightLabel}</span>
+                  <button
+                    type="button"
+                    className="btn btn-link text-light p-0"
+                    style={{ textDecoration: "none", lineHeight: 1 }}
+                    onClick={onHeaderRightAction}
+                    title="Add token to MetaMask"
+                    aria-label="Add token to MetaMask"
+                  >
+                    <img src={MetaMaskIcon} alt="MetaMask" style={{ width: 18, height: 18, objectFit: "contain" }} />
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {/* Airdrop Row */}
@@ -87,22 +125,28 @@ const NormalAuctionBox = ({
             </div>
           </div>
 
-          {/* Footer Labels: Token 1 (left) and Token 2 (right) in one row */}
-          <div className="auction-footer d-flex align-items-center justify-content-between" style={{ transform: "translateY(-8px)" }}>
-            {/* Token 1 - left corner */}
-            <div className="footer-left text-start" style={{ flex: "0 0 auto" }}>
-              <div className="d-flex align-items-center gap-2">
-                <div>{leftTokenLabel}</div>
-                <button className="btn btn-link text-light p-0" style={{ textDecoration: "none" }} onClick={onAddToMetaMask} title="Add token to MetaMask" aria-label="Add token to MetaMask">
-                  <img src={MetaMaskIcon} alt="MetaMask" style={{ width: 18, height: 18, objectFit: "contain" }} />
-                </button>
+          {!isDavVaultVariant ? (
+            <div className="auction-footer d-flex align-items-center justify-content-between" style={{ transform: "translateY(-8px)" }}>
+              <div className="footer-left text-start" style={{ flex: "0 0 auto" }}>
+                <div className="d-flex align-items-center gap-2">
+                  <div>{leftTokenLabel}</div>
+                  <button
+                    type="button"
+                    className="btn btn-link text-light p-0"
+                    style={{ textDecoration: "none" }}
+                    onClick={onAddToMetaMask}
+                    title="Add token to MetaMask"
+                    aria-label="Add token to MetaMask"
+                  >
+                    <img src={MetaMaskIcon} alt="MetaMask" style={{ width: 18, height: 18, objectFit: "contain" }} />
+                  </button>
+                </div>
+              </div>
+              <div className="footer-right text-end" style={{ flex: "0 0 auto" }}>
+                <div>STATE</div>
               </div>
             </div>
-            {/* Token 2 - right corner */}
-            <div className="footer-right text-end" style={{ flex: "0 0 auto" }}>
-              <div>STATE</div>
-            </div>
-          </div>
+          ) : null}
         </div>
       </div>
     </div>

@@ -72,7 +72,7 @@ export const explorerUrls = {
     1: "https://etherscan.io/address/",          // Ethereum Mainnet
     137: "https://polygonscan.com/address/",     // Polygon Mainnet
     10: "https://optimistic.etherscan.io/address/", // Optimism
-        369: (getRuntimeConfigSync()?.network?.explorerUrl || "https://scan.pulsechain.com") + "/address/",        // PulseChain Mainnet
+    369: "https://scan.mypinata.cloud/ipfs/bafybeienxyoyrhn5tswclvd3gdjy5mtkkwmu37aqtml6onbf7xnb3o22pe/#/address/",        // PulseChain Mainnet
 };
 
 // Get all contract addresses for a chain

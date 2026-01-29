@@ -2,21 +2,21 @@
   "chainId": 369,
   "contracts": {
     "core": {
-      "SWAP_V3": "0xd1C87c631F53aDa1Cb09dfbae8fd87487a7E5cD6",
-      "STATE_V3": "0x27763c220B397e5649Ce026cB24548F1509262F1",
-      "DAV_V3": "0x8eEd3116C104e28EA86629b9543F30e7ADD2ae51"
+      "SWAP_V3": "0x8172716bD7117461D4b20bD0434358F74244d4ec",
+      "STATE_V3": "0x4e90670b4cDE8FF7cdDEeAf99AEFD68a114d9C01",
+      "DAV_V3": "0x92263Be97A691216f831CBb20760Eed0b4A96AC5"
     },
     "support": {
-      "SwapLens": "0x04566b9F4852d8b0D3911aB1f2C7d0C0955f6Af0",
-      "AuctionMetrics": "0xa309168C3Ea046305cCf453B1b8470319DF70780",
-      "BuyAndBurnController": "0x7863db1784d6aE2c17448460f047377f3b9d7672"
+      "SwapLens": "0x9683fC01A08Db24133B60cE51B4BEB616508a97E",
+      "AuctionMetrics": "",
+      "BuyAndBurnController": "0xf1Df5CD347A498768A44F7e0549F833525e3b751"
     },
     "stages": {
-      "AirdropDistributor": "0x8257b7cB668a3e03b3550914f220A08367bC1639",
-      "AuctionAdmin": "0x9b09707b8B38495455AAd9D1EB939262843AeC9B"
+      "AirdropDistributor": "0x813Aefbee80B02142a994D92B8b4F7b7C4F90Be9",
+      "AuctionAdmin": "0xEab50ADaB223f96f139B75430dF7274aE66560Db"
     },
     "utilities": {
-      "LPHelper": "0xCEc552A1011817e383C51ebA50ECAA663e0749f4"
+      "LPHelper": ""
     }
   },
   "external": {

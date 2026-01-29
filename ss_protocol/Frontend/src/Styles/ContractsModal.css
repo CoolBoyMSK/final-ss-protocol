@@ -33,7 +33,7 @@
 .contracts-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 8px;
   padding: 8px 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
@@ -72,6 +72,7 @@
 }
 
 .contracts-close {
+  margin-left: 8px;
   appearance: none;
   border: 1px solid rgba(255, 255, 255, 0.15);
   width: 32px;
@@ -93,10 +94,91 @@
   color: #fff;
 }
 
+.contracts-header-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.contracts-select {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.18);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 28px 6px 10px;
+  border-radius: 9999px;
+  outline: none;
+  cursor: pointer;
+  line-height: 1;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath fill='rgba(255,255,255,0.75)' d='M7 10l5 5l5-5z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px 14px;
+}
+
+.contracts-select:focus,
+.contracts-select:focus-visible {
+  box-shadow: none;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.contracts-coming-soon {
+  height: 100%;
+  min-height: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 6px;
+  padding: 24px 12px;
+}
+
+.contracts-coming-network {
+  font-size: 18px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.contracts-coming-dav {
+  font-size: 14px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.contracts-coming-note {
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.6);
+}
+
 .contracts-body {
   padding: 8px 16px 12px;
   max-height: calc(85vh - 80px);
   overflow-y: auto;
+}
+
+/* Embedded mode: render inside an existing container (no overlay/backdrop) */
+.contracts-modal.contracts-embedded {
+  width: 100% !important;
+  max-width: none !important;
+  height: 100% !important;
+  max-height: none !important;
+  margin: 0 !important;
+  border-radius: 12px;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.contracts-modal.contracts-embedded .contracts-body {
+  flex: 1;
+  max-height: none;
+  overflow: auto;
 }
 
 /* Verification notice */

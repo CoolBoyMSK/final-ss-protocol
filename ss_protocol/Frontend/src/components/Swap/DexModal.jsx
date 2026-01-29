@@ -39,7 +39,10 @@ const DexModal = ({ isOpen, onClose, token, preselectToken }) => {
         </div>
         <div className="dex-body">
           {/* Use explicit preselectToken so we don't have to mutate token.tokenName and can keep original icon */}
-          <SwapComponent preselectToken={preselectToken || token?.tokenName} />
+          <SwapComponent
+            preselectToken={preselectToken || token?.tokenName}
+            onSwapSuccess={onClose}
+          />
         </div>
       </div>
     </div>

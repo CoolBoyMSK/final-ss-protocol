@@ -8,38 +8,38 @@
   "contracts": {
     "core": {
       "SWAP_V3": {
-        "address": "0x329390c539008885491a09Df6798267e643182A1"
+        "address": "0x8172716bD7117461D4b20bD0434358F74244d4ec"
       },
       "STATE_V3": {
-        "address": "0x72f55666a5CfB5a7C179F9E829402C34bd0708Bd",
-        "name": "pSTATE",
-        "symbol": "pSTATE",
+        "address": "0x4e90670b4cDE8FF7cdDEeAf99AEFD68a114d9C01",
+        "name": "PulseSTATE1",
+        "symbol": "pSTATE1",
         "decimals": 18
       },
       "DAV_V3": {
-        "address": "0xb8bC708aF8dc74DeFAff6A45708f37E046B1498d",
-        "name": "pDAV",
-        "symbol": "pDAV",
+        "address": "0x92263Be97A691216f831CBb20760Eed0b4A96AC5",
+        "name": "PulseDAV1",
+        "symbol": "pDAV1",
         "decimals": 18
       }
     },
     "support": {
       "SwapLens": {
-        "address": "0x458D1e955374f3a45278B38ac7ae75bCFfc1c444"
+        "address": "0x9683fC01A08Db24133B60cE51B4BEB616508a97E"
       },
       "AuctionMetrics": {
         "address": ""
       },
       "BuyAndBurnController": {
-        "address": "0xF6Cd74d4DEdB69bE6824F51d669D5F3483962335"
+        "address": "0xf1Df5CD347A498768A44F7e0549F833525e3b751"
       }
     },
     "stages": {
       "AirdropDistributor": {
-        "address": "0x0d0F194f1d2652185F42148b584F8381a5c3545F"
+        "address": "0x813Aefbee80B02142a994D92B8b4F7b7C4F90Be9"
       },
       "AuctionAdmin": {
-        "address": "0x3F3350E7Cc9F1309182E3280eF9aBB4d042d6aB4"
+        "address": "0xEab50ADaB223f96f139B75430dF7274aE66560Db"
       }
     },
     "utilities": {
