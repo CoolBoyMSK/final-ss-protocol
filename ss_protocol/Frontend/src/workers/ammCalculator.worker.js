@@ -11,36 +11,53 @@ const PULSEX_ROUTER_ABI = [
   'function getAmountsOut(uint amountIn, address[] calldata path) external view returns (uint[] memory amounts)'
 ];
 
-const PULSEX_ROUTER_ADDRESS = '0x98bf93ebf5c380C0e6Ae8e192A7e2AE08edAcc02';
+const DEFAULT_ROUTER_ADDRESS = '';
 // Defaults only (can be overridden per request via options)
-const DEFAULT_WPLS_ADDRESS = '0xA1077a294dDE1B09bB078844df40758a5D0f9a27';
-const DEFAULT_STATE_ADDRESS = '0x233fDa1043d9fbE59Fe89fA0492644430C67C35a';
+const DEFAULT_WPLS_ADDRESS = '';
+const DEFAULT_STATE_ADDRESS = '';
 
 // RPC endpoint for background calculations
-const RPC_URL = 'https://pulsechain-rpc.publicnode.com';
+const DEFAULT_RPC_URL = 'https://rpc.pulsechain.com';
 
 let provider = null;
 let routerContract = null;
+let providerRpcUrl = null;
+let routerAddress = null;
+
+function normalizeAddress(address) {
+  if (!address) return '';
+  try {
+    return ethers.getAddress(address);
+  } catch {
+    return '';
+  }
+}
 
 // Initialize provider and contract
-function initProvider() {
-  if (!provider) {
-    provider = new ethers.JsonRpcProvider(RPC_URL);
+function initProvider(activeRpcUrl, activeRouterAddress) {
+  if (!provider || providerRpcUrl !== activeRpcUrl) {
+    provider = new ethers.JsonRpcProvider(activeRpcUrl);
+    providerRpcUrl = activeRpcUrl;
+    routerContract = null;
+    routerAddress = null;
+  }
+  if (!routerContract || routerAddress !== activeRouterAddress) {
     routerContract = new ethers.Contract(
-      PULSEX_ROUTER_ADDRESS,
+      activeRouterAddress,
       PULSEX_ROUTER_ABI,
       provider
     );
+    routerAddress = activeRouterAddress;
   }
   return { provider, routerContract };
 }
 
 // Calculate TOKEN -> STATE output (wei)
-async function calculateTokenStateWei(tokenAddress, balance, stateAddress, decimals = 18) {
+async function calculateTokenStateWei(tokenAddress, balance, stateAddress, activeRpcUrl, activeRouterAddress, decimals = 18) {
   if (!balance || balance === '0' || !tokenAddress) return 0n;
 
   try {
-    const { routerContract } = initProvider();
+    const { routerContract } = initProvider(activeRpcUrl, activeRouterAddress);
     const balanceWei = ethers.parseUnits(String(balance), decimals);
     if (balanceWei === 0n) return 0n;
 
@@ -81,8 +98,18 @@ function formatWeiToDisplay(wei) {
 
 async function calculateAllAmmValuesWithOptions(tokens, tokenBalances, options) {
   const onlyTotal = Boolean(options?.onlyTotal);
-  const stateAddress = ethers.getAddress(options?.stateAddress || DEFAULT_STATE_ADDRESS);
-  const wplsAddress = ethers.getAddress(options?.wplsAddress || DEFAULT_WPLS_ADDRESS);
+  const activeRpcUrl = options?.rpcUrl || DEFAULT_RPC_URL;
+  const activeRouterAddress = normalizeAddress(options?.routerAddress || DEFAULT_ROUTER_ADDRESS);
+
+  if (!activeRouterAddress) {
+    throw new Error('Missing routerAddress for AMM worker');
+  }
+
+  const stateAddress = normalizeAddress(options?.stateAddress || DEFAULT_STATE_ADDRESS);
+  const wplsAddress = normalizeAddress(options?.wplsAddress || DEFAULT_WPLS_ADDRESS);
+  if (!stateAddress || !wplsAddress) {
+    throw new Error('Missing stateAddress/wplsAddress for AMM worker');
+  }
   const results = {};
   let totalStateWei = 0n;
 
@@ -111,7 +138,7 @@ async function calculateAllAmmValuesWithOptions(tokens, tokenBalances, options) 
 
     // Always compute TOKEN -> STATE for totals.
     // Only compute TOKEN -> WPLS display values when needed.
-    const stateWei = await calculateTokenStateWei(token.TokenAddress, balance, stateAddress);
+    const stateWei = await calculateTokenStateWei(token.TokenAddress, balance, stateAddress, activeRpcUrl, activeRouterAddress);
     return { tokenName, numeric: 0, display: onlyTotal ? '0' : '0', stateWei };
   }));
 
@@ -128,7 +155,7 @@ async function calculateAllAmmValuesWithOptions(tokens, tokenBalances, options) 
   let totalPlsWei = 0n;
   try {
     if (totalStateWei > 0n) {
-      const { routerContract } = initProvider();
+      const { routerContract } = initProvider(activeRpcUrl, activeRouterAddress);
       const path = [stateAddress, wplsAddress];
       const amounts = await routerContract.getAmountsOut(totalStateWei, path);
       totalPlsWei = amounts[amounts.length - 1] || 0n;
@@ -156,7 +183,7 @@ async function calculateAllAmmValuesWithOptions(tokens, tokenBalances, options) 
       if (tokenName === 'STATE') {
         // STATE row shows STATE -> PLS (matches STATE/WPLS DEX)
         try {
-          const { routerContract } = initProvider();
+          const { routerContract } = initProvider(activeRpcUrl, activeRouterAddress);
           const path = [stateAddress, wplsAddress];
           const amounts = await routerContract.getAmountsOut(tokenStateWei, path);
           const plsWei = amounts[amounts.length - 1] || 0n;

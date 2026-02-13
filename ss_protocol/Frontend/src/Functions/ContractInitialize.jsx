@@ -11,7 +11,8 @@ import {
 } from "../Constants/ContractConfig";
 import { CHAIN_IDS, getContractAddresses } from "../Constants/ContractAddresses";
 import { useAccount, useChainId, useWalletClient } from "wagmi";
-import { getRuntimeConfigSync } from "../Constants/RuntimeConfig";
+import { getRuntimeConfigSync, setRuntimeSelection } from "../Constants/RuntimeConfig";
+import { useDeploymentStore } from "../stores";
 
 const ContractContext = createContext(null);
 
@@ -23,6 +24,8 @@ export const ContractProvider = ({ children }) => {
   const { isConnected, address } = useAccount();
   const chainId = useChainId();
   const { data: walletClient } = useWalletClient();
+  const selectedDavId = useDeploymentStore((state) => state.selectedDavId);
+  const hydrateSelectedDavId = useDeploymentStore((state) => state.hydrateSelectedDavId);
 
   const [loading, setLoading] = useState(true);
   const [provider, setProvider] = useState(null);
@@ -31,28 +34,28 @@ export const ContractProvider = ({ children }) => {
   const [AllContracts, setContracts] = useState({});
 
   useEffect(() => {
-    // Always initialize contracts so the app works in read-only mode even without a wallet
-    let desiredChainId = isChainSupported(chainId) ? chainId : CHAIN_IDS.PULSECHAIN;
+    hydrateSelectedDavId();
+  }, [hydrateSelectedDavId]);
 
-    // If the chain is "supported" but we don't have core contract addresses, fallback to PulseChain
-    try {
-      const addresses = getContractAddresses(desiredChainId);
-      if (!addresses?.AUCTION || !addresses?.DAV_TOKEN || !addresses?.STATE_TOKEN) {
-        if (desiredChainId !== CHAIN_IDS.PULSECHAIN) {
-          console.warn(`No core contracts configured for chain ${desiredChainId}. Falling back to PulseChain.`);
-        }
-        desiredChainId = CHAIN_IDS.PULSECHAIN;
-      }
-    } catch {}
+  useEffect(() => {
+    // Always initialize contracts so the app works in read-only mode even without a wallet
+    const runtimeCfg = getRuntimeConfigSync();
+    const defaultChainId = Number(runtimeCfg?.selection?.chainId || CHAIN_IDS.PULSECHAIN);
+    const desiredChainId = isChainSupported(chainId) ? chainId : defaultChainId;
+
+    setRuntimeSelection({
+      chainId: desiredChainId,
+      davId: selectedDavId || 'DAV1',
+    });
 
     if (!isChainSupported(chainId)) {
-      console.warn(`Connected chain ${chainId} is not supported. Falling back to PulseChain.`);
+      console.warn(`Connected chain ${chainId} is not supported. Using configured runtime chain ${desiredChainId}.`);
     }
     setChainId(desiredChainId);
 
     initializeContracts();
     // Re-init on wallet connect/disconnect, chain changes, or wallet client changes
-  }, [isConnected, address, chainId, walletClient]);
+  }, [isConnected, address, chainId, walletClient, selectedDavId, hydrateSelectedDavId]);
   const initializeContracts = async () => {
     try {
       setLoading(true);
@@ -87,14 +90,10 @@ export const ContractProvider = ({ children }) => {
       // Always have a read-only provider as a fallback (PulseChain)
       const readOnlyProvider = new ethers.JsonRpcProvider(fallbackRpcUrl);
 
-      // Determine the active chain we intend to use for contracts
-      let activeChainId = isChainSupported(chainId) ? chainId : CHAIN_IDS.PULSECHAIN;
-      try {
-        const addrs = getContractAddresses(activeChainId);
-        if (!addrs?.AUCTION || !addrs?.DAV_TOKEN || !addrs?.STATE_TOKEN) {
-          activeChainId = CHAIN_IDS.PULSECHAIN;
-        }
-      } catch {}
+      // Determine the active chain we intend to use for contracts (strictly selected chain)
+      const activeChainId = isChainSupported(chainId)
+        ? chainId
+        : Number(runtimeCfg?.selection?.chainId || CHAIN_IDS.PULSECHAIN);
 
       // Only use signer for contracts if the wallet is on the active chain; otherwise use read-only provider
       const execProvider = (signer && chainId === activeChainId) ? signer : readOnlyProvider;
@@ -186,10 +185,7 @@ export const ContractProvider = ({ children }) => {
     // Admin-only extras
     auction: AllContracts.AuctionContract,
     swapLens: AllContracts.swapLens,
-    lpHelper: AllContracts.lpHelper,
-    liquidityManager: AllContracts.liquidityManager,
     buyBurnController: AllContracts.buyBurnController,
-    auctionMetrics: AllContracts.auctionMetrics,
     airdropDistributor: AllContracts.airdropDistributor,
     // Expose resolved addresses when available (ethers v6 Contract.target also works)
     addresses: {

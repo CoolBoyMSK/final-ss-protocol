@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from "react";
 import { useContractContext } from "../../Functions/useContractContext";
-import { getContractAddresses, CHAIN_IDS } from "../../Constants/ContractAddresses";
 import { getRuntimeConfigSync } from "../../Constants/RuntimeConfig";
 import { ethers } from "ethers";
 import toast from "react-hot-toast";
+import { useChainId } from "wagmi";
+import { useDeploymentStore } from "../../stores";
 
 export default function SystemInitializationPage() {
   const { AuctionContract, provider, signer, addresses, AllContracts } = useContractContext();
+  const chainId = useChainId();
+  const selectedDavId = useDeploymentStore((state) => state.selectedDavId);
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
@@ -24,21 +27,20 @@ export default function SystemInitializationPage() {
   
   // Auto-populate contract addresses from configuration
   useEffect(() => {
-    const chainId = CHAIN_IDS.PULSECHAIN;
-    const addresses = getContractAddresses(chainId);
-    
     const cfg = getRuntimeConfigSync();
     setContractAddresses({
-      stateToken: addresses.STATE_TOKEN,
-      davToken: addresses.DAV_TOKEN,
-      airdropDistributor: addresses.AIRDROP_DISTRIBUTOR,
-      auctionAdmin: addresses.AUCTION_ADMIN,
-      buyBurnController: addresses.BUY_BURN_CONTROLLER,
-      swapLens: addresses.SWAP_LENS,
-      pulseXRouter: cfg?.dex?.router?.address || "0x98bf93ebf5c380C0e6Ae8e192A7e2AE08edAcc02",
-      pulseXFactory: cfg?.dex?.factory?.address || "0x1715a3E4A142d8b698131108995174F37aEBA10D"
+      stateToken: cfg?.contracts?.core?.STATE_V3?.address || "",
+      davToken: cfg?.contracts?.core?.DAV_V3?.address || "",
+      airdropDistributor: cfg?.contracts?.stages?.AirdropDistributor?.address || "",
+      auctionAdmin: cfg?.contracts?.stages?.AuctionAdmin?.address || "",
+      buyBurnController: cfg?.contracts?.support?.BuyAndBurnController?.address || "",
+      swapLens: cfg?.contracts?.support?.SwapLens?.address || "",
+      pulseXRouter: cfg?.dex?.router?.address || "",
+      pulseXFactory: cfg?.dex?.factory?.address || ""
     });
-  }, []);
+  }, [chainId, selectedDavId]);
+
+  const deploymentReady = Object.values(contractAddresses).every((value) => !!value);
 
   // Check if system is already initialized
   useEffect(() => {
@@ -102,6 +104,14 @@ export default function SystemInitializationPage() {
   const handleInitializeSystem = async () => {
     if (!AuctionContract) {
       alert("Contract not available");
+      return;
+    }
+
+    if (!deploymentReady) {
+      toast.error("Selected DAV deployment is incomplete on this network.", {
+        position: "top-center",
+        duration: 5000,
+      });
       return;
     }
 
@@ -253,7 +263,7 @@ export default function SystemInitializationPage() {
               <button
                 className="btn btn-primary btn-lg ms-3"
                 onClick={handleInitializeSystem}
-                disabled={loading}
+                disabled={loading || !deploymentReady}
                 style={{minWidth: '200px'}}
               >
                 {loading ? (
@@ -270,6 +280,13 @@ export default function SystemInitializationPage() {
               </button>
             )}
           </div>
+
+          {!deploymentReady && (
+            <div className="alert alert-info mt-3 mb-0">
+              <i className="bi bi-info-circle-fill me-2"></i>
+              Selected DAV is not fully deployed on the current wallet network yet.
+            </div>
+          )}
 
           {/* Progress Bar */}
           <div className="mb-4">

@@ -50,12 +50,11 @@ export function useStateOutWorker(options = {}) {
   const getAddresses = useCallback(() => {
     const cfg = getRuntimeConfigSync();
     return {
+      rpcUrl: cfg?.network?.rpcUrl || 'https://rpc.pulsechain.com',
       swapV3Address: cfg?.contracts?.core?.SWAP_V3?.address || 
-                     getContractAddress(chainId, 'AUCTION') ||
-                     '0x8172716bD7117461D4b20bD0434358F74244d4ec',
+                     getContractAddress(chainId, 'AUCTION'),
       stateAddress: cfg?.contracts?.core?.STATE_V3?.address ||
-                    getContractAddress(chainId, 'STATE_TOKEN') ||
-                    '0x4e90670b4cDE8FF7cdDEeAf99AEFD68a114d9C01'
+                    getContractAddress(chainId, 'STATE_TOKEN')
     };
   }, [chainId]);
 
@@ -140,7 +139,7 @@ export function useStateOutWorker(options = {}) {
         workerRef.current = null;
       }
     };
-  }, []);
+  }, [getAddresses]);
 
   // Calculate STATE out
   const calculate = useCallback(async (fromBlockOverride) => {
@@ -161,11 +160,12 @@ export function useStateOutWorker(options = {}) {
     
     // Determine start block
     let fromBlock = fromBlockOverride ?? resetBlock;
+    const addrs = getAddresses();
     
     // If no reset block set, use smart default (recent blocks only)
     if (fromBlock == null || fromBlock === 0) {
       try {
-        const response = await fetch('https://rpc.pulsechain.com', {
+        const response = await fetch(addrs.rpcUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -190,18 +190,22 @@ export function useStateOutWorker(options = {}) {
     workerRef.current.postMessage({
       type: 'CALCULATE_STATE_OUT',
       options: {
+        rpcUrl: addrs.rpcUrl,
+        swapV3Address: addrs.swapV3Address,
+        stateAddress: addrs.stateAddress,
         fromBlock,
         toBlock: 'latest'
       },
       requestId: requestIdRef.current
     });
-  }, [loading, resetBlock]);
+  }, [loading, resetBlock, getAddresses]);
 
   // Reset counter (set new checkpoint block)
   const resetCounter = useCallback(async () => {
     try {
+      const addrs = getAddresses();
       // Get current block from RPC
-      const response = await fetch('https://rpc.pulsechain.com', {
+      const response = await fetch(addrs.rpcUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

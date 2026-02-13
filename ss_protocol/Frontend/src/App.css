@@ -114,3 +114,75 @@ input[type="number"] {
 .font-weight-bold {
   font-weight: normal !important;
 }
+
+.coming-soon-active main .dav-vault-page .dav-vault-right-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.coming-soon-active main .admin-container .card,
+.coming-soon-active main .admin-container .table-responsive,
+.coming-soon-active main .admin-container .form-control,
+.coming-soon-active main .admin-container .form-select,
+.coming-soon-active main .admin-container .btn {
+  position: relative;
+  overflow: hidden;
+}
+
+.coming-soon-active main .dav-vault-page .dav-vault-right-card > * {
+  filter: blur(2px);
+  pointer-events: none;
+  user-select: none;
+}
+
+.coming-soon-active main .admin-container .card > *,
+.coming-soon-active main .admin-container .table-responsive > *,
+.coming-soon-active main .admin-container .form-control > *,
+.coming-soon-active main .admin-container .form-select > *,
+.coming-soon-active main .admin-container .btn > * {
+  filter: blur(2px);
+  pointer-events: none;
+  user-select: none;
+}
+
+.coming-soon-active main .dav-vault-page .dav-vault-right-card::after {
+  content: var(--coming-network, "Network") "\A" var(--coming-dav, "DAV") "\A Coming Soon";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  white-space: pre;
+  line-height: 1.35;
+  padding: 14px;
+  background: rgba(8, 12, 18, 0.55);
+  backdrop-filter: blur(6px);
+  color: #ffffff;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  z-index: 20;
+}
+
+.coming-soon-active main .admin-container .card::after,
+.coming-soon-active main .admin-container .table-responsive::after,
+.coming-soon-active main .admin-container .form-control::after,
+.coming-soon-active main .admin-container .form-select::after,
+.coming-soon-active main .admin-container .btn::after {
+  content: var(--coming-network, "Network") "\A" var(--coming-dav, "DAV") "\A Coming Soon";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  white-space: pre;
+  line-height: 1.35;
+  padding: 14px;
+  background: rgba(8, 12, 18, 0.55);
+  backdrop-filter: blur(6px);
+  color: #ffffff;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  z-index: 20;
+}

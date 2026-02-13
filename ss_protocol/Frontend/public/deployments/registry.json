@@ -1,0 +1,237 @@
+{
+  "version": 1,
+  "defaultSelection": {
+    "chainId": 369,
+    "davId": "DAV1"
+  },
+  "networks": {
+    "369": {
+      "chainId": 369,
+      "name": "PulseChain Mainnet",
+      "symbolPrefix": "p",
+      "rpcUrl": "https://rpc.pulsechain.com",
+      "explorerUrl": "https://scan.pulsechain.com",
+      "deployments": {
+        "DAV1": {
+          "contracts": {
+            "core": {
+              "SWAP_V3": {
+                "address": "0x8172716bD7117461D4b20bD0434358F74244d4ec"
+              },
+              "STATE_V3": {
+                "address": "0x4e90670b4cDE8FF7cdDEeAf99AEFD68a114d9C01",
+                "name": "PulseSTATE1",
+                "symbol": "pSTATE1",
+                "decimals": 18
+              },
+              "DAV_V3": {
+                "address": "0x92263Be97A691216f831CBb20760Eed0b4A96AC5",
+                "name": "PulseDAV1",
+                "symbol": "pDAV1",
+                "decimals": 18
+              }
+            },
+            "support": {
+              "SwapLens": {
+                "address": "0x9683fC01A08Db24133B60cE51B4BEB616508a97E"
+              },
+              "BuyAndBurnController": {
+                "address": "0xf1Df5CD347A498768A44F7e0549F833525e3b751"
+              }
+            },
+            "stages": {
+              "AirdropDistributor": {
+                "address": "0x813Aefbee80B02142a994D92B8b4F7b7C4F90Be9"
+              },
+              "AuctionAdmin": {
+                "address": "0xEab50ADaB223f96f139B75430dF7274aE66560Db"
+              }
+            }
+          },
+          "dex": {
+            "router": {
+              "address": "0x98bf93ebf5c380C0e6Ae8e192A7e2AE08edAcc02"
+            },
+            "factory": {
+              "address": "0x1715a3E4A142d8b698131108995174F37aEBA10D"
+            },
+            "baseToken": {
+              "address": "0xA1077a294dDE1B09bB078844df40758a5D0f9a27",
+              "symbol": "WPLS",
+              "decimals": 18
+            }
+          }
+        },
+        "DAV2": {
+          "contracts": {
+            "core": {
+              "SWAP_V3": {
+                "address": ""
+              },
+              "STATE_V3": {
+                "address": "",
+                "name": "PulseSTATE2",
+                "symbol": "pSTATE2",
+                "decimals": 18
+              },
+              "DAV_V3": {
+                "address": "",
+                "name": "PulseDAV2",
+                "symbol": "pDAV2",
+                "decimals": 18
+              }
+            },
+            "support": {
+              "SwapLens": {
+                "address": ""
+              },
+              "BuyAndBurnController": {
+                "address": ""
+              }
+            },
+            "stages": {
+              "AirdropDistributor": {
+                "address": ""
+              },
+              "AuctionAdmin": {
+                "address": ""
+              }
+            }
+          },
+          "dex": {
+            "router": {
+              "address": "0x98bf93ebf5c380C0e6Ae8e192A7e2AE08edAcc02"
+            },
+            "factory": {
+              "address": "0x1715a3E4A142d8b698131108995174F37aEBA10D"
+            },
+            "baseToken": {
+              "address": "0xA1077a294dDE1B09bB078844df40758a5D0f9a27",
+              "symbol": "WPLS",
+              "decimals": 18
+            }
+          }
+        },
+        "DAV3": {
+          "contracts": {
+            "core": {
+              "SWAP_V3": {
+                "address": ""
+              },
+              "STATE_V3": {
+                "address": "",
+                "name": "PulseSTATE3",
+                "symbol": "pSTATE3",
+                "decimals": 18
+              },
+              "DAV_V3": {
+                "address": "",
+                "name": "PulseDAV3",
+                "symbol": "pDAV3",
+                "decimals": 18
+              }
+            },
+            "support": {
+              "SwapLens": {
+                "address": ""
+              },
+              "BuyAndBurnController": {
+                "address": ""
+              }
+            },
+            "stages": {
+              "AirdropDistributor": {
+                "address": ""
+              },
+              "AuctionAdmin": {
+                "address": ""
+              }
+            }
+          },
+          "dex": {
+            "router": {
+              "address": "0x98bf93ebf5c380C0e6Ae8e192A7e2AE08edAcc02"
+            },
+            "factory": {
+              "address": "0x1715a3E4A142d8b698131108995174F37aEBA10D"
+            },
+            "baseToken": {
+              "address": "0xA1077a294dDE1B09bB078844df40758a5D0f9a27",
+              "symbol": "WPLS",
+              "decimals": 18
+            }
+          }
+        }
+      }
+    },
+    "146": {
+      "chainId": 146,
+      "name": "Sonic",
+      "symbolPrefix": "s",
+      "rpcUrl": "",
+      "explorerUrl": "",
+      "deployments": {
+        "DAV1": {
+          "contracts": {
+            "core": {
+              "SWAP_V3": {
+                "address": ""
+              },
+              "STATE_V3": {
+                "address": "",
+                "name": "SonicSTATE1",
+                "symbol": "sSTATE1",
+                "decimals": 18
+              },
+              "DAV_V3": {
+                "address": "",
+                "name": "SonicDAV1",
+                "symbol": "sDAV1",
+                "decimals": 18
+              }
+            }
+          },
+          "dex": {
+            "router": {
+              "address": ""
+            },
+            "factory": {
+              "address": ""
+            },
+            "baseToken": {
+              "address": "",
+              "symbol": "WS",
+              "decimals": 18
+            }
+          }
+        },
+        "DAV2": { "contracts": { "core": { "SWAP_V3": { "address": "" }, "STATE_V3": { "address": "", "name": "SonicSTATE2", "symbol": "sSTATE2", "decimals": 18 }, "DAV_V3": { "address": "", "name": "SonicDAV2", "symbol": "sDAV2", "decimals": 18 } } }, "dex": { "router": { "address": "" }, "factory": { "address": "" }, "baseToken": { "address": "", "symbol": "WS", "decimals": 18 } } },
+        "DAV3": { "contracts": { "core": { "SWAP_V3": { "address": "" }, "STATE_V3": { "address": "", "name": "SonicSTATE3", "symbol": "sSTATE3", "decimals": 18 }, "DAV_V3": { "address": "", "name": "SonicDAV3", "symbol": "sDAV3", "decimals": 18 } } }, "dex": { "router": { "address": "" }, "factory": { "address": "" }, "baseToken": { "address": "", "symbol": "WS", "decimals": 18 } } }
+      }
+    },
+    "137": {
+      "chainId": 137,
+      "name": "Polygon",
+      "symbolPrefix": "m",
+      "rpcUrl": "",
+      "explorerUrl": "",
+      "deployments": {
+        "DAV1": { "contracts": { "core": { "SWAP_V3": { "address": "" }, "STATE_V3": { "address": "", "name": "PolygonSTATE1", "symbol": "mSTATE1", "decimals": 18 }, "DAV_V3": { "address": "", "name": "PolygonDAV1", "symbol": "mDAV1", "decimals": 18 } } }, "dex": { "router": { "address": "" }, "factory": { "address": "" }, "baseToken": { "address": "", "symbol": "WMATIC", "decimals": 18 } } },
+        "DAV2": { "contracts": { "core": { "SWAP_V3": { "address": "" }, "STATE_V3": { "address": "", "name": "PolygonSTATE2", "symbol": "mSTATE2", "decimals": 18 }, "DAV_V3": { "address": "", "name": "PolygonDAV2", "symbol": "mDAV2", "decimals": 18 } } }, "dex": { "router": { "address": "" }, "factory": { "address": "" }, "baseToken": { "address": "", "symbol": "WMATIC", "decimals": 18 } } },
+        "DAV3": { "contracts": { "core": { "SWAP_V3": { "address": "" }, "STATE_V3": { "address": "", "name": "PolygonSTATE3", "symbol": "mSTATE3", "decimals": 18 }, "DAV_V3": { "address": "", "name": "PolygonDAV3", "symbol": "mDAV3", "decimals": 18 } } }, "dex": { "router": { "address": "" }, "factory": { "address": "" }, "baseToken": { "address": "", "symbol": "WMATIC", "decimals": 18 } } }
+      }
+    },
+    "1": {
+      "chainId": 1,
+      "name": "Ethereum Mainnet",
+      "symbolPrefix": "e",
+      "rpcUrl": "",
+      "explorerUrl": "",
+      "deployments": {
+        "DAV1": { "contracts": { "core": { "SWAP_V3": { "address": "" }, "STATE_V3": { "address": "", "name": "EthSTATE1", "symbol": "eSTATE1", "decimals": 18 }, "DAV_V3": { "address": "", "name": "EthDAV1", "symbol": "eDAV1", "decimals": 18 } } }, "dex": { "router": { "address": "" }, "factory": { "address": "" }, "baseToken": { "address": "", "symbol": "WETH", "decimals": 18 } } },
+        "DAV2": { "contracts": { "core": { "SWAP_V3": { "address": "" }, "STATE_V3": { "address": "", "name": "EthSTATE2", "symbol": "eSTATE2", "decimals": 18 }, "DAV_V3": { "address": "", "name": "EthDAV2", "symbol": "eDAV2", "decimals": 18 } } }, "dex": { "router": { "address": "" }, "factory": { "address": "" }, "baseToken": { "address": "", "symbol": "WETH", "decimals": 18 } } },
+        "DAV3": { "contracts": { "core": { "SWAP_V3": { "address": "" }, "STATE_V3": { "address": "", "name": "EthSTATE3", "symbol": "eSTATE3", "decimals": 18 }, "DAV_V3": { "address": "", "name": "EthDAV3", "symbol": "eDAV3", "decimals": 18 } } }, "dex": { "router": { "address": "" }, "factory": { "address": "" }, "baseToken": { "address": "", "symbol": "WETH", "decimals": 18 } } }
+      }
+    }
+  }
+}

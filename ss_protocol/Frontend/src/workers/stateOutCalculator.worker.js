@@ -9,34 +9,47 @@
  * Uses pure fetch API (no external dependencies) for Web Worker compatibility
  */
 
-// RPC endpoints for background calculations (multiple for fallback)
-const RPC_ENDPOINTS = [
+// Default RPC endpoints for fallback if request doesn't pass one
+const DEFAULT_RPC_ENDPOINTS = [
   'https://rpc.pulsechain.com',
   'https://pulsechain-rpc.publicnode.com',
   'https://rpc-pulsechain.g4mm4.io'
 ];
 
-// Contract addresses (PulseChain mainnet) - HARDCODED for reliability
-const DEFAULT_SWAP_V3_ADDRESS = '0x8172716bD7117461D4b20bD0434358F74244d4ec';
-const DEFAULT_STATE_ADDRESS = '0x4e90670b4cDE8FF7cdDEeAf99AEFD68a114d9C01';
+let activeRpcEndpoints = [...DEFAULT_RPC_ENDPOINTS];
+
+// Contract addresses must be passed from main thread runtime config
+const DEFAULT_SWAP_V3_ADDRESS = '';
+const DEFAULT_STATE_ADDRESS = '';
 
 // TokensSwapped event topic (keccak256 of signature)
 // event TokensSwapped(address indexed user, address indexed inputToken, address indexed stateToken, uint256 amountIn, uint256 amountOut)
 const TOKENS_SWAPPED_TOPIC = '0xad56699d0f375866eb895ed27203058a36a713382aaded78eb6b67da266d4332';
 
-// STATE address padded to 32 bytes for topic filtering
-const STATE_TOPIC_PADDED = '0x0000000000000000000000004e90670b4cde8ff7cddeeaf99aefd68a114d9c01';
-
 let currentRpcIndex = 0;
 
 function getCurrentRpc() {
-  return RPC_ENDPOINTS[currentRpcIndex];
+  return activeRpcEndpoints[currentRpcIndex];
 }
 
 function switchRpc() {
-  currentRpcIndex = (currentRpcIndex + 1) % RPC_ENDPOINTS.length;
+  currentRpcIndex = (currentRpcIndex + 1) % activeRpcEndpoints.length;
   console.log('[Worker] Switched to RPC:', getCurrentRpc());
   return getCurrentRpc();
+}
+
+function normalizeRpcEndpoints(options = {}) {
+  const fromArray = Array.isArray(options.rpcUrls) ? options.rpcUrls.filter(Boolean) : [];
+  const fromSingle = options.rpcUrl ? [options.rpcUrl] : [];
+  const next = [...fromArray, ...fromSingle];
+  activeRpcEndpoints = next.length ? next : [...DEFAULT_RPC_ENDPOINTS];
+  currentRpcIndex = 0;
+}
+
+function toStateTopicPadded(address) {
+  const clean = String(address || '').toLowerCase().replace(/^0x/, '');
+  if (clean.length !== 40) return null;
+  return `0x${'0'.repeat(24)}${clean}`;
 }
 
 /**
@@ -175,6 +188,17 @@ async function calculateStateOutSinceBlock(options = {}) {
     toBlock = 'latest'
   } = options;
 
+  normalizeRpcEndpoints(options);
+
+  if (!swapV3Address || !stateAddress) {
+    throw new Error('Missing swapV3Address/stateAddress for stateOut calculation');
+  }
+
+  const stateTopicPadded = toStateTopicPadded(stateAddress);
+  if (!stateTopicPadded) {
+    throw new Error('Invalid stateAddress for topic filtering');
+  }
+
   console.log('[Worker] calculateStateOutSinceBlock called with:', { swapV3Address, stateAddress, fromBlock, toBlock });
 
   // Get current block if toBlock is 'latest'
@@ -193,7 +217,7 @@ async function calculateStateOutSinceBlock(options = {}) {
     TOKENS_SWAPPED_TOPIC,
     null,
     null,
-    STATE_TOPIC_PADDED
+    stateTopicPadded
   ];
   
   console.log('[Worker] Fetching logs from block', fromBlock, 'to', endBlock);

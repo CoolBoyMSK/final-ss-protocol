@@ -22,8 +22,9 @@ import { ContractContext } from "../../Functions/ContractInitialize";
 import { notifyError } from "../../Constants/Constants";
 import { calculatePlsValueNumeric, formatNumber, formatWithCommas } from "../../Constants/Utils";
 import { calculateAmmValuesAsync } from "../../utils/workerManager";
+import { getDeploymentStatus, getRuntimeConfigSync } from "../../Constants/RuntimeConfig";
 // Optimized: Use Zustand stores for selective subscriptions
-import { useTokenStore } from "../../stores";
+import { useDeploymentStore, useTokenStore } from "../../stores";
 
 const AuctionSection = () => {
     const chainId = useChainId();
@@ -68,7 +69,8 @@ const AuctionSection = () => {
     }, [DaipriceChange]);
     const [amount, setAmount] = useState("");
     const [Refferalamount, setReferralAmount] = useState("");
-    const [selectedDav, setSelectedDav] = useState("DAV1");
+    const selectedDav = useDeploymentStore((state) => state.selectedDavId);
+    const setSelectedDav = useDeploymentStore((state) => state.setSelectedDavId);
     const [load, setLoad] = useState(false);
     const [copied, setCopied] = useState(false);
     const [copiedCode, setCopiedCode] = useState("");
@@ -77,11 +79,36 @@ const AuctionSection = () => {
     // Worker-based AMM estimate (null = not calculated yet)
     const [ammEstimatedPls, setAmmEstimatedPls] = useState(null);
 
+    const davSymbolPrefix = useMemo(() => {
+        const cfg = getRuntimeConfigSync();
+        return cfg?.network?.symbolPrefix || 'p';
+    }, [chainId, selectedDav]);
+
+    const getDavSymbol = useCallback((davKey) => `${davSymbolPrefix}${davKey}`, [davSymbolPrefix]);
+
     const davVariantInfo = useMemo(() => ({
-        DAV1: { label: "JP Morgain (DAV1)", costPls: 3_000_000, userLimit: 2500, yieldPct: 30, comingSoon: false },
-        DAV2: { label: "GM Sachs (DAV2)", costPls: null, userLimit: null, yieldPct: null, comingSoon: true },
-        DAV3: { label: "Deutsche Bros (DAV3)", costPls: null, userLimit: null, yieldPct: null, comingSoon: true },
-    }), []);
+        DAV1: {
+            label: `JP Morgain (${getDavSymbol('DAV1')})`,
+            costPls: 3_000_000,
+            userLimit: 2500,
+            yieldPct: 30,
+            comingSoon: !getDeploymentStatus(chainId, 'DAV1').ready,
+        },
+        DAV2: {
+            label: `GM Sachs (${getDavSymbol('DAV2')})`,
+            costPls: 3_000_000,
+            userLimit: 2500,
+            yieldPct: 30,
+            comingSoon: !getDeploymentStatus(chainId, 'DAV2').ready,
+        },
+        DAV3: {
+            label: `Deutsche Bros (${getDavSymbol('DAV3')})`,
+            costPls: 3_000_000,
+            userLimit: 2500,
+            yieldPct: 30,
+            comingSoon: !getDeploymentStatus(chainId, 'DAV3').ready,
+        },
+    }), [chainId, getDavSymbol]);
 
     const selectedDavInfo = davVariantInfo[selectedDav] || davVariantInfo.DAV1;
 
@@ -226,6 +253,7 @@ const AuctionSection = () => {
                     const wplsEntry = Object.values(TOKENS || {}).find(t => t?.symbol === 'WPLS');
                     wplsAddressRaw = wplsEntry?.address;
                 }
+                const runtimeCfg = getRuntimeConfigSync();
 
                 // Reduce worker load: only send tokens with a non-zero balance (plus DAV/STATE)
                 const filteredTokens = tokens.filter(t => {
@@ -240,6 +268,8 @@ const AuctionSection = () => {
                     effectiveBalances,
                     {
                         onlyTotal: true,
+                        rpcUrl: runtimeCfg?.network?.rpcUrl,
+                        routerAddress: runtimeCfg?.dex?.router?.address,
                         stateAddress: stateAddressRaw,
                         wplsAddress: wplsAddressRaw,
                     }
@@ -357,9 +387,9 @@ const AuctionSection = () => {
                                     onChange={handleDavSelectChange}
                                     style={{ height: "38px", color: "#ffffff", fontWeight: 400 }}
                                 >
-                                    <option value="DAV1">JP Morgain (DAV1)</option>
-                                    <option value="DAV2">GM Sachs (DAV2) (Coming Soon)</option>
-                                    <option value="DAV3">Deutsche Bros (DAV3) (Coming Soon)</option>
+                                    <option value="DAV1">{`JP Morgain (${getDavSymbol('DAV1')})`}</option>
+                                    <option value="DAV2">{`GM Sachs (${getDavSymbol('DAV2')}) (Coming Soon)`}</option>
+                                    <option value="DAV3">{`Deutsche Bros (${getDavSymbol('DAV3')}) (Coming Soon)`}</option>
                                 </select>
                                 <label htmlFor="davSelect" className="floating-label">
                                     Select DAV
@@ -379,10 +409,10 @@ const AuctionSection = () => {
                                 }}
                                 className="btn btn-primary btn-sm mb-0"
                                 style={{ width: "200px" }}
-                                disabled={load || isGov}
-                                title={isGov ? "Governance cannot mint DAV" : "Mint DAV"}
+                                disabled={selectedDavInfo.comingSoon || load || isGov}
+                                title={selectedDavInfo.comingSoon ? "Coming soon for this DAV" : (isGov ? "Governance cannot mint DAV" : "Mint DAV")}
                             >
-                                {load ? "Minting..." : "Mint"}
+                                {selectedDavInfo.comingSoon ? "Coming Soon" : (load ? "Minting..." : "Mint")}
                             </button>
                         </div>
                     </div>
@@ -416,16 +446,22 @@ const AuctionSection = () => {
                                     </div>
                                     <div className="d-flex">
                                         <h5>
-                                            {isGov ? (
-                                                <>{(isLoading && davGovernanceHolds === "0.0") ? <DotAnimation /> : davGovernanceHolds}</>
+                                            {selectedDavInfo.comingSoon ? (
+                                                <span style={{ fontSize: "14px", fontWeight: 600 }}>COMING SOON</span>
                                             ) : (
-                                                <>{(isLoading && davHolds === "0.0") ? <DotAnimation /> : davHolds}</>
-                                            )}{" "}
-                                            / {(isLoading && davExpireHolds === "0.0") ? (
-                                                <DotAnimation />
-                                            ) : (
-                                                // Governance DAV never expires: display 0 expired for governance wallet
-                                                isGov ? 0 : davExpireHolds
+                                                <>
+                                                    {isGov ? (
+                                                        <>{(isLoading && davGovernanceHolds === "0.0") ? <DotAnimation /> : davGovernanceHolds}</>
+                                                    ) : (
+                                                        <>{(isLoading && davHolds === "0.0") ? <DotAnimation /> : davHolds}</>
+                                                    )}{" "}
+                                                    / {(isLoading && davExpireHolds === "0.0") ? (
+                                                        <DotAnimation />
+                                                    ) : (
+                                                        // Governance DAV never expires: display 0 expired for governance wallet
+                                                        isGov ? 0 : davExpireHolds
+                                                    )}
+                                                </>
                                             )}
                                         </h5>
                                     </div>
@@ -435,7 +471,7 @@ const AuctionSection = () => {
                                 <h6 className="detailText d-flex" style={{ fontSize: "14px", textTransform: "capitalize" }}>
                                     {chainId == 146 ? "SONIC - HOLDERS FEE" : "HOLDERS FEE"}
                                 </h6>
-                                <h5>{formatWithCommas(claimableAmount)} {nativeSymbol}</h5>
+                                <h5>{selectedDavInfo.comingSoon ? <span style={{ fontSize: "14px", fontWeight: 600 }}>COMING SOON</span> : `${formatWithCommas(claimableAmount)} ${nativeSymbol}`}</h5>
                                 <div className="d-flex justify-content-center">
                                     <button
                                         onClick={async () => {
@@ -450,9 +486,9 @@ const AuctionSection = () => {
                                         }}
                                         className="btn btn-primary d-flex btn-sm justify-content-center align-items-center mx-5"
                                         style={{ width: "190px", marginTop: "1.85rem" }}
-                                        disabled={Number(claimableAmount) === 0 || isClaiming}
+                                        disabled={selectedDavInfo.comingSoon || Number(claimableAmount) === 0 || isClaiming}
                                     >
-                                        {isClaiming ? "Claiming..." : "Claim"}
+                                        {selectedDavInfo.comingSoon ? "Coming Soon" : (isClaiming ? "Claiming..." : "Claim")}
                                     </button>
                                 </div>
                             </div>

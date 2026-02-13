@@ -3,9 +3,14 @@ import { useContractContext } from "../../Functions/useContractContext";
 import { ethers } from "ethers";
 import { toast } from "react-hot-toast";
 import { generateIdenticon } from "../../utils/identicon";
+import { useChainId } from "wagmi";
+import { getRuntimeConfigSync } from "../../Constants/RuntimeConfig";
+import { useDeploymentStore } from "../../stores";
 
 export default function TokenManagementPage() {
   const { AuctionContract, LiquidityManager, AllContracts, account } = useContractContext();
+  const chainId = useChainId();
+  const selectedDavId = useDeploymentStore((state) => state.selectedDavId);
   const ADMIN_ALLOWLIST = useMemo(() => [
     '0x9fa004e13e780ef5b50ca225ad5dcd4d0fe9ed70',
   ], []);
@@ -42,6 +47,21 @@ export default function TokenManagementPage() {
   const canAddLiquidity = useMemo(() => !!LiquidityManager, [LiquidityManager]);
   const stateTokenAddress = useMemo(() => AllContracts?.stateContract?.target || AllContracts?._stateAddress, [AllContracts]);
   const [isGov, setIsGov] = useState(false);
+
+  const runtimeCfg = useMemo(() => getRuntimeConfigSync(), [chainId, selectedDavId]);
+  const expectedChainId = Number(runtimeCfg?.selection?.chainId || runtimeCfg?.network?.chainId || chainId || 0);
+  const expectedNetworkName = runtimeCfg?.network?.name || (expectedChainId ? `Chain ${expectedChainId}` : 'current network');
+  const deploymentReady = Boolean(
+    runtimeCfg?.contracts?.core?.SWAP_V3?.address &&
+    runtimeCfg?.contracts?.core?.STATE_V3?.address &&
+    runtimeCfg?.contracts?.core?.DAV_V3?.address
+  );
+
+  const ensureDeploymentReady = () => {
+    if (deploymentReady) return true;
+    toast.error(`Selected ${selectedDavId} is not deployed on ${expectedNetworkName}.`, { duration: 6000 });
+    return false;
+  };
 
   const allPoolsCreated = useMemo(() => {
     if (tokenCount <= 0) return false;
@@ -153,6 +173,7 @@ export default function TokenManagementPage() {
 
   const deployToken = async (e) => {
     e.preventDefault();
+    if (!ensureDeploymentReady()) return;
     if (!AuctionContract) {
       toast.error("Auction contract not ready", { duration: 5000 });
       return;
@@ -213,6 +234,7 @@ export default function TokenManagementPage() {
 
   const createPool = async (e) => {
     e.preventDefault();
+    if (!ensureDeploymentReady()) return;
     if (!AuctionContract) return alert("Auction contract not ready");
     let token, tokenWei, stateWei;
     try {
@@ -520,6 +542,7 @@ export default function TokenManagementPage() {
 
   const addLiquidityFromModal = async (e) => {
     e.preventDefault();
+  if (!ensureDeploymentReady()) return;
   if (!AuctionContract || !selectedToken) return alert("Contract not ready or no token selected");
     
     console.log("=== ADD LIQUIDITY DEBUG START ===");
@@ -539,13 +562,13 @@ export default function TokenManagementPage() {
           chainId: network.chainId.toString()
         });
         
-        if (network.chainId !== 369n) {
-          return alert(`Wrong network!\nConnected to chain ID: ${network.chainId}\nExpected: 369 (PulseChain)\n\nPlease switch to PulseChain in your wallet.`);
+        if (expectedChainId && network.chainId !== BigInt(expectedChainId)) {
+          return alert(`Wrong network!\nConnected to chain ID: ${network.chainId}\nExpected: ${expectedChainId} (${expectedNetworkName})\n\nPlease switch network in your wallet.`);
         }
       }
     } catch (netErr) {
       console.error("Network check failed:", netErr);
-      return alert("Failed to verify network. Please ensure you're connected to PulseChain.");
+      return alert(`Failed to verify network. Please ensure you're connected to ${expectedNetworkName}.`);
     }
     
     try {
@@ -647,7 +670,7 @@ export default function TokenManagementPage() {
               "Network: " + network.name + " (Chain ID: " + network.chainId + ")\n\n" +
               "This address has NO CODE on this network.\n\n" +
               "Solutions:\n" +
-              "1. Switch to PulseChain Mainnet (Chain ID 369)\n" +
+              "1. Switch to " + expectedNetworkName + " (Chain ID " + expectedChainId + ")\n" +
               "2. Verify the contract is deployed on this network\n" +
               "3. Update the contract address in your configuration"
             );

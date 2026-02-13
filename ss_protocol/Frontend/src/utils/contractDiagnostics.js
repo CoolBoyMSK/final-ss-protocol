@@ -63,10 +63,7 @@ export const runDiagnostics = async () => {
       { name: "STATE_TOKEN", key: "stateContract", address: addresses.STATE_TOKEN },
       { name: "AUCTION", key: "AuctionContract", address: addresses.AUCTION },
       { name: "SWAP_LENS", key: "swapLens", address: addresses.SWAP_LENS },
-      { name: "LP_HELPER", key: "lpHelper", address: addresses.LP_HELPER },
-      { name: "LIQUIDITY_MANAGER", key: "liquidityManager", address: addresses.LIQUIDITY_MANAGER },
       { name: "BUY_BURN_CONTROLLER", key: "buyBurnController", address: addresses.BUY_BURN_CONTROLLER },
-      { name: "AUCTION_METRICS", key: "auctionMetrics", address: addresses.AUCTION_METRICS },
       { name: "AIRDROP_DISTRIBUTOR", key: "airdropDistributor", address: addresses.AIRDROP_DISTRIBUTOR },
       { name: "AUCTION_ADMIN", key: "auctionAdmin", address: addresses.AUCTION_ADMIN },
     ];

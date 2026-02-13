@@ -1,8 +1,16 @@
+import { useMemo } from "react";
+import { useChainId } from "wagmi";
 import AuctionBoxes from "./AuctionBoxes";
 import ComingSoonBox from "./ComingSoonBox";
 import DavEligibilityWarning from "../DavEligibilityWarning";
+import { getRuntimeConfigSync } from "../../Constants/RuntimeConfig";
 
 const LiveAuctionPage = ({ uiVariant } = {}) => {
+  const chainId = useChainId();
+  const prefix = useMemo(() => {
+    const cfg = getRuntimeConfigSync();
+    return cfg?.network?.symbolPrefix || 'p';
+  }, [chainId]);
   // DAV ACCESS GATE (DISABLED)
   // Per request: remove access restrictions for /live-auction but keep the code for future use.
   //
@@ -112,10 +120,10 @@ const LiveAuctionPage = ({ uiVariant } = {}) => {
           <AuctionBoxes uiVariant={uiVariant} />
         </div>
         <div className="col-md-4 p-0 m-2 cards coming-soon-offset second-box-adjust">
-          <ComingSoonBox title="pDAV2" note="Coming Soon..." />
+          <ComingSoonBox title={`${prefix}DAV2`} note="Coming Soon..." />
         </div>
         <div className="col-md-4 p-0 m-2 cards coming-soon-offset">
-          <ComingSoonBox title="pDAV3" note="Coming Soon..." />
+          <ComingSoonBox title={`${prefix}DAV3`} note="Coming Soon..." />
         </div>
       </div>
     </div>

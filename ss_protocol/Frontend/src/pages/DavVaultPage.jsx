@@ -1,11 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
+import { useChainId } from "wagmi";
 import LiveAuctionPage from "../components/Auction/LiveAuctionPage";
 import InfoPage from "../components/Info/InfoPage";
 import ContractsModal from "../components/ContractsModal";
+import { useDeploymentStore } from "../stores";
+import { getRuntimeConfigSync } from "../Constants/RuntimeConfig";
 
 export default function DavVaultPage() {
   const [rightView, setRightView] = useState("auction");
+  const chainId = useChainId();
+  const selectedDavId = useDeploymentStore((state) => state.selectedDavId);
+  const setSelectedDavId = useDeploymentStore((state) => state.setSelectedDavId);
   const isActive = (view) => rightView === view;
+
+  const prefix = useMemo(() => {
+    const cfg = getRuntimeConfigSync();
+    return cfg?.network?.symbolPrefix || 'p';
+  }, [chainId, selectedDavId]);
+
+  const symbolFor = (davId) => `${prefix}${davId}`;
 
   const auctionDayNumber = useMemo(() => {
     // Anchor: 2025-12-08 14:00:00 UTC (matches utils/auctionTiming.js manual schedule anchor)
@@ -151,7 +164,8 @@ export default function DavVaultPage() {
             <div className="d-flex flex-column gap-3">
               <button
                 type="button"
-                className="btn btn-primary w-100 text-center dav-vault-btn"
+                onClick={() => setSelectedDavId("DAV1")}
+                className={`w-100 text-center dav-vault-btn btn ${selectedDavId === "DAV1" ? "btn-primary" : "btn-dark"}`}
                 style={{
                   borderRadius: 9999,
                   padding: "10px 12px",
@@ -167,7 +181,7 @@ export default function DavVaultPage() {
                   <div>
                     JP Morgain (DAV1)
                     <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.95 }}>
-                      pDav1 - Day {typeof auctionDayNumber === "number" && auctionDayNumber > 0 ? auctionDayNumber : "—"}
+                      {symbolFor('DAV1')} - Day {typeof auctionDayNumber === "number" && auctionDayNumber > 0 ? auctionDayNumber : "—"}
                     </div>
                   </div>
                 </div>
@@ -177,8 +191,8 @@ export default function DavVaultPage() {
 
               <button
                 type="button"
-                className="btn btn-dark w-100 text-center dav-vault-btn"
-                disabled
+                onClick={() => setSelectedDavId("DAV2")}
+                className={`w-100 text-center dav-vault-btn btn ${selectedDavId === "DAV2" ? "btn-primary" : "btn-dark"}`}
                 style={{
                   borderRadius: 9999,
                   padding: "10px 12px",
@@ -191,15 +205,15 @@ export default function DavVaultPage() {
                 <div className="d-flex flex-column align-items-center">
                   <div>
                     GM Sachs (DAV2)
-                    <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.9 }}>pDav2 - Coming Soon...</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.9 }}>{symbolFor('DAV2')} - Coming Soon...</div>
                   </div>
                 </div>
               </button>
 
               <button
                 type="button"
-                className="btn btn-dark w-100 text-center dav-vault-btn"
-                disabled
+                onClick={() => setSelectedDavId("DAV3")}
+                className={`w-100 text-center dav-vault-btn btn ${selectedDavId === "DAV3" ? "btn-primary" : "btn-dark"}`}
                 style={{
                   borderRadius: 9999,
                   padding: "10px 12px",
@@ -212,7 +226,7 @@ export default function DavVaultPage() {
                 <div className="d-flex flex-column align-items-center">
                   <div>
                     Deutsche Bros (DAV3)
-                    <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.9 }}>pDav3 - Coming Soon...</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.9 }}>{symbolFor('DAV3')} - Coming Soon...</div>
                   </div>
                 </div>
               </button>

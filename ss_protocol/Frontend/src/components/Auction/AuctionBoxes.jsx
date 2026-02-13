@@ -11,6 +11,7 @@ import { useAllTokens } from "../Swap/Tokens";
 import { useDAvContract } from "../../Functions/DavTokenFunctions";
 import { useStatePoolAddress } from "../../Functions/useStatePoolAddress";
 import { getDAVContractAddress, getSTATEContractAddress } from "../../Constants/ContractAddresses";
+import { getRuntimeConfigSync } from "../../Constants/RuntimeConfig";
 import { ERC20_ABI } from "../../Constants/Constants";
 import { chainCurrencyMap } from "../../../WalletConfig";
 import toast from "react-hot-toast";
@@ -81,11 +82,14 @@ const AuctionBoxes = ({ uiVariant } = {}) => {
 		const chainId = useChainId();
 		const TOKENS = useAllTokens();
 		const nativeSymbol = chainCurrencyMap[chainId] || 'PLS';
+		const activeDavSymbol = useMemo(() => {
+			const cfg = getRuntimeConfigSync();
+			return cfg?.contracts?.core?.DAV_V3?.symbol || 'DAV';
+		}, [chainId]);
 		const davTokenAddress = useMemo(() => getDAVContractAddress(chainId), [chainId]);
 		const addDavToMetaMask = useCallback(() => {
-			// Separate button in the RIGHT header: adds pDAV1 (DAV token) to MetaMask
-			handleAddToken(davTokenAddress, 'pDAV1', 18);
-		}, [handleAddToken, davTokenAddress]);
+			handleAddToken(davTokenAddress, activeDavSymbol, 18);
+		}, [handleAddToken, davTokenAddress, activeDavSymbol]);
 		const plsIndexValue = useMemo(() => {
 			const pct = daiPct ?? 0;
 			const base = Number(String(totalInvestedPls ?? 0).replace(/,/g, ''));
@@ -891,7 +895,7 @@ useEffect(() => {
 									{isReverse ? (
 					    <ReverseAuctionBox
 											uiVariant={uiVariant}
-											headerRightLabel={uiVariant === 'davVault' ? 'pDAV1' : undefined}
+											headerRightLabel={uiVariant === 'davVault' ? activeDavSymbol : undefined}
 											onHeaderRightAction={uiVariant === 'davVault' ? addDavToMetaMask : undefined}
 						    headerTitle={headerTitle}
 					    ratioText={ratioTextReverse}
@@ -927,7 +931,7 @@ useEffect(() => {
 								) : (
 									<NormalAuctionBox
 										uiVariant={uiVariant}
-										headerRightLabel={uiVariant === 'davVault' ? 'pDAV1' : undefined}
+										headerRightLabel={uiVariant === 'davVault' ? activeDavSymbol : undefined}
 										onHeaderRightAction={uiVariant === 'davVault' ? addDavToMetaMask : undefined}
 										headerTitle={headerTitle}
 										airdropText={airdropText}

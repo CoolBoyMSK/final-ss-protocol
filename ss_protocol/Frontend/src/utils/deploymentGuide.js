@@ -23,16 +23,13 @@ Deploy contracts in this order:
 3. DAV_V3 (dav token)
    - Constructor: (liquidity_wallet, state_token_address, governance_address, "PulseDAV", "pDAV")
    
-4. LPHelper
-   - Constructor: (PULSEX_ROUTER, PULSEX_FACTORY)
-   
-5. AirdropDistributor
+4. AirdropDistributor
    - Constructor: (swap_address, dav_address, state_address, governance_address)
    
-6. AuctionAdmin
+5. AuctionAdmin
    - Constructor: (swap_address)
    
-7. BuyAndBurnController_V2
+6. BuyAndBurnController_V2
    - Constructor: (governance, swap_address, state_address, dav_address, PULSEX_ROUTER, PULSEX_FACTORY, WPLS_ADDRESS)
 */
 
@@ -56,15 +53,6 @@ export const INTEGRATION_STEPS = [
     description: 'Connect DAV token to SWAP contract',
     contractMethod: 'setDavTokenAddress',
     args: ['DAV_TOKEN_ADDRESS'],
-    contract: 'SWAP',
-    required: true
-  },
-  {
-    id: 'lp-helper',
-    title: 'LP Helper Integration',
-    description: 'Connect LP Helper to SWAP contract',
-    contractMethod: 'setLPHelperAddress', 
-    args: ['LP_HELPER_ADDRESS'],
     contract: 'SWAP',
     required: true
   },
@@ -192,11 +180,6 @@ export const VERIFICATION_CHECKLIST = [
     expected: 'Returns DAV token address'
   },
   {
-    check: 'LP Helper Connected',
-    method: 'swap.lpHelperAddress()', 
-    expected: 'Returns LP Helper address'
-  },
-  {
     check: 'Airdrop Connected',
     method: 'swap.airdropDistributor()',
     expected: 'Returns Airdrop Distributor address'
@@ -253,8 +236,7 @@ export const CONTRACT_ADDRESSES_TEMPLATE = {
   STATE_TOKEN: "0x...", // STATE_V3 token
   DAV_TOKEN: "0x...", // DAV_V3 token
   
-  // Helper Contracts  
-  LP_HELPER: "0x...", // LPHelper
+  // Integration Contracts
   AIRDROP_DISTRIBUTOR: "0x...", // AirdropDistributor
   AUCTION_ADMIN: "0x...", // AuctionAdmin
   BUY_BURN_CONTROLLER: "0x...", // BuyAndBurnController_V2
@@ -280,7 +262,6 @@ export const getIntegrationStatus = async (contracts) => {
     // Check each integration
     status.stateToken = await contracts.SWAP.stateTokenAddress() !== "0x0000000000000000000000000000000000000000";
     status.davToken = await contracts.SWAP.davTokenAddress() !== "0x0000000000000000000000000000000000000000";
-    status.lpHelper = await contracts.SWAP.lpHelperAddress() !== "0x0000000000000000000000000000000000000000";
     status.airdrop = await contracts.SWAP.airdropDistributor() !== "0x0000000000000000000000000000000000000000";
     status.admin = await contracts.SWAP.auctionAdmin() !== "0x0000000000000000000000000000000000000000";
     status.pulseXRouter = await contracts.SWAP.pulseXRouter() === "0x98bf93ebf5c380C0e6Ae8e192A7e2AE08edAcc02";

@@ -1,7 +1,7 @@
 import "bootstrap/dist/css/bootstrap.min.css";
 import "./App.css";
 import "./Styles/styles.css";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Header from "./components/Header";
 import InfoCards from "./components/InfoCards";
 import DataTable from "./components/DataTable";
@@ -22,10 +22,31 @@ import AdminLayout from "./components/admin/AdminLayout";
 import DavVaultPage from "./pages/DavVaultPage";
 import { useGovernanceGate } from "./components/admin/useGovernanceGate";
 import { startMemoryMonitor, performMemoryCleanup } from "./utils/memoryCleanup";
+import { useChainId } from "wagmi";
+import { useDeploymentStore } from "./stores";
+import { getDeploymentStatus, getRuntimeConfigSync } from "./Constants/RuntimeConfig";
 
 const App = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const { isGovernance, loading: govLoading } = useGovernanceGate();
+  const chainId = useChainId();
+  const selectedDavId = useDeploymentStore((state) => state.selectedDavId);
+
+  const deploymentStatus = useMemo(() => {
+    const runtime = getRuntimeConfigSync();
+    const effectiveChainId = Number(chainId || runtime?.selection?.chainId || 369);
+    return getDeploymentStatus(effectiveChainId, selectedDavId || "DAV1");
+  }, [chainId, selectedDavId]);
+
+  const comingSoonNetwork = useMemo(
+    () => deploymentStatus?.networkName || "Network",
+    [deploymentStatus]
+  );
+
+  const comingSoonDav = useMemo(() => {
+    const davTag = deploymentStatus?.davSymbol || deploymentStatus?.davId || "DAV";
+    return davTag;
+  }, [deploymentStatus]);
 
   // Memory monitoring and cleanup
   useEffect(() => {
@@ -61,7 +82,13 @@ const App = () => {
 
   return (
     <Router>
-      <div className="d-flex flex-column min-vh-100">
+      <div
+        className={`d-flex flex-column min-vh-100 ${deploymentStatus.ready ? "" : "coming-soon-active"}`}
+        style={deploymentStatus.ready ? undefined : {
+          "--coming-network": `"${comingSoonNetwork}"`,
+          "--coming-dav": `"${comingSoonDav}"`,
+        }}
+      >
         <Header />
         <Toaster position="bottom-left" reverseOrder={false} />
         <div>

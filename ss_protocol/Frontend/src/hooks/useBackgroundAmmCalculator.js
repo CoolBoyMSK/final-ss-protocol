@@ -15,13 +15,12 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { ethers } from 'ethers';
 import { getCachedContract, getCachedProvider } from '../utils/contractCache';
 import { createSmartPoller } from '../utils/smartPolling';
+import { getRuntimeConfigSync } from '../Constants/RuntimeConfig';
 
-// PulseX Router
-const PULSEX_ROUTER_ADDRESS = '0x98bf93ebf5c380C0e6Ae8e192A7e2AE08edAcc02';
+// DEX router is selected from runtime config
 const PULSEX_ROUTER_ABI = [
   'function getAmountsOut(uint amountIn, address[] calldata path) external view returns (uint[] memory amounts)'
 ];
-const RPC_URL = 'https://pulsechain-rpc.publicnode.com';
 
 // Cache key and TTL
 // v4: per-token values are STATE-denominated (except STATE shown in PLS)
@@ -102,6 +101,8 @@ export function useBackgroundAmmCalculator(sortedTokens, tokenBalances, chainId,
   const calculationIdRef = useRef(0);
   const providerRef = useRef(null);
   const routerRef = useRef(null);
+  const providerRpcRef = useRef('');
+  const routerAddressRef = useRef('');
   const isCalculatingRef = useRef(false); // Prevent concurrent calculations
   
   // Get addresses from TOKENS object (same pattern as Utils.js)
@@ -122,15 +123,24 @@ export function useBackgroundAmmCalculator(sortedTokens, tokenBalances, chainId,
   
   // Initialize provider lazily using cache
   const getRouter = useCallback(() => {
-    if (!providerRef.current) {
-      providerRef.current = getCachedProvider(RPC_URL);
+    const runtimeCfg = getRuntimeConfigSync();
+    const rpcUrl = runtimeCfg?.network?.rpcUrl || 'https://rpc.pulsechain.com';
+    const routerAddress = runtimeCfg?.dex?.router?.address;
+    if (!routerAddress) return null;
+
+    if (!providerRef.current || providerRpcRef.current !== rpcUrl) {
+      providerRef.current = getCachedProvider(rpcUrl);
+      providerRpcRef.current = rpcUrl;
+      routerRef.current = null;
+      routerAddressRef.current = '';
     }
-    if (!routerRef.current) {
+    if (!routerRef.current || routerAddressRef.current !== routerAddress) {
       routerRef.current = getCachedContract(
-        PULSEX_ROUTER_ADDRESS,
+        routerAddress,
         PULSEX_ROUTER_ABI,
         providerRef.current
       );
+      routerAddressRef.current = routerAddress;
     }
     return routerRef.current;
   }, []);
@@ -190,6 +200,7 @@ export function useBackgroundAmmCalculator(sortedTokens, tokenBalances, chainId,
     
     try {
       const router = getRouter();
+      if (!router) return 0n;
       const balanceWei = safeParseBalance(balance, decimals);
       if (balanceWei === 0n) {
         return 0n;

@@ -24,7 +24,7 @@ import { truncateDecimals } from "../Constants/Utils";
 import { getCachedContract, COMMON_ABIS } from "../utils/contractCache";
 import { createSmartPoller } from "../utils/smartPolling";
 // Zustand stores for optimized state management
-import { useUserStore } from "../stores";
+import { useDeploymentStore, useUserStore } from "../stores";
 
 export const DAVContext = createContext();
 
@@ -32,9 +32,9 @@ export const DAVContext = createContext();
 const DAV_CACHE_KEY = 'dav_page_cache';
 const CACHE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
 
-const getDavCache = (address, chainId) => {
+const getDavCache = (address, chainId, davId = 'DAV1') => {
   try {
-    const cacheKey = `${DAV_CACHE_KEY}_${chainId}_${address?.toLowerCase()}`;
+    const cacheKey = `${DAV_CACHE_KEY}_${chainId}_${davId}_${address?.toLowerCase()}`;
     const cached = sessionStorage.getItem(cacheKey);
     if (!cached) return null;
     const { data, timestamp } = JSON.parse(cached);
@@ -49,9 +49,9 @@ const getDavCache = (address, chainId) => {
   }
 };
 
-const setDavCache = (address, chainId, data) => {
+const setDavCache = (address, chainId, davId = 'DAV1', data) => {
   try {
-    const cacheKey = `${DAV_CACHE_KEY}_${chainId}_${address?.toLowerCase()}`;
+    const cacheKey = `${DAV_CACHE_KEY}_${chainId}_${davId}_${address?.toLowerCase()}`;
     const cacheData = {
       data: {
         davHolds: data.davHolds,
@@ -78,6 +78,7 @@ export const DavProvider = ({ children }) => {
   const { AllContracts, signer, provider } = useContext(ContractContext);
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
+  const selectedDavId = useDeploymentStore((state) => state.selectedDavId);
   const [buttonTextStates, setButtonTextStates] = useState({});
 
   // Get contract addresses for the connected chain
@@ -143,14 +144,14 @@ export const DavProvider = ({ children }) => {
   // Load cached data on mount for instant display
   useEffect(() => {
     if (address && chainId) {
-      const cached = getDavCache(address, chainId);
+      const cached = getDavCache(address, chainId, selectedDavId || 'DAV1');
       if (cached) {
         setData(prev => ({ ...prev, ...cached }));
         // Show cached data immediately, but keep loading for fresh data
         console.log('📦 Loaded DAV data from cache for instant display');
       }
     }
-  }, [address, chainId]);
+  }, [address, chainId, selectedDavId]);
 
   // Prefer read-only provider for ALL read calls to avoid wallet chain/provider flakiness
   // Keep write calls using the signer-bound instances
@@ -600,13 +601,13 @@ export const DavProvider = ({ children }) => {
         // Use setTimeout to ensure state is updated before caching
         setTimeout(() => {
           setData(currentData => {
-            setDavCache(address, chainId, currentData);
+            setDavCache(address, chainId, selectedDavId || 'DAV1', currentData);
             return currentData;
           });
         }, 100);
       }
     }
-  }, [AllContracts, address, chainId]);
+  }, [AllContracts, address, chainId, selectedDavId]);
 
   const fetchStateHolding = async () => {
     await fetchAndSet("stateHolding", () =>
@@ -736,7 +737,7 @@ export const DavProvider = ({ children }) => {
       if (address && chainId) {
         setTimeout(() => {
           setData(currentData => {
-            setDavCache(address, chainId, currentData);
+            setDavCache(address, chainId, selectedDavId || 'DAV1', currentData);
             return currentData;
           });
         }, 100);
@@ -744,7 +745,18 @@ export const DavProvider = ({ children }) => {
     } catch (error) {
       console.error("Error fetching DAV balances:", error);
     }
-  }, [AllContracts, address, chainId]);
+  }, [AllContracts, address, chainId, selectedDavId]);
+
+  useEffect(() => {
+    setData(getInitialData());
+  }, [chainId, selectedDavId, address]);
+
+  useEffect(() => {
+    if (!AllContracts?.davContract) {
+      setData(getInitialData());
+      setLoading(false);
+    }
+  }, [AllContracts?.davContract, chainId, selectedDavId]);
 
   // Consolidated background refresh - smart polling with active/idle detection
   // Fast updates (15s) when user is active, slow updates (60s) when idle

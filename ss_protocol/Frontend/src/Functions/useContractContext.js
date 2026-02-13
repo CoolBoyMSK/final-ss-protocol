@@ -15,8 +15,6 @@ export const useContractContext = () => {
 			// commonly used handles
 			AuctionContract,
 			BuyAndBurnController: ctx?.AllContracts?.buyBurnController ?? null,
-			LPHelper: ctx?.AllContracts?.lpHelper ?? null,
-			LiquidityManager: ctx?.AllContracts?.liquidityManager ?? null,
 			SwapLens: ctx?.AllContracts?.swapLens ?? null,
 			// resolved addresses when available
 			addresses: {

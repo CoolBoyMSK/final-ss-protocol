@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useChainId } from "wagmi";
 import { getContractAddressesForChain, CHAIN_IDS } from "../Constants/ContractAddresses";
+import { useDeploymentStore } from "../stores";
+import { getStateDisplaySymbol, getDavDisplaySymbol, setRuntimeSelection } from "../Constants/RuntimeConfig";
 import "../Styles/ContractsModal.css";
 import faviconLogo from "/favicon.png";
 
@@ -49,6 +51,8 @@ const copyToClipboard = async (text, setCopied) => {
 
 const ContractsModal = ({ isOpen, onClose, embedded = false, uiVariant }) => {
   const walletChainId = useChainId() || CHAIN_IDS.PULSECHAIN;
+  const selectedDavId = useDeploymentStore((state) => state.selectedDavId);
+  const setSelectedDavId = useDeploymentStore((state) => state.setSelectedDavId);
   const isDavVaultVariant = uiVariant === "davVault" || (() => {
     try {
       if (typeof window === "undefined") return false;
@@ -67,19 +71,29 @@ const ContractsModal = ({ isOpen, onClose, embedded = false, uiVariant }) => {
       return false;
     }
   })();
-  const [davVaultNetworkKey, setDavVaultNetworkKey] = useState("pulsechain");
-  const [davVaultDavKey, setDavVaultDavKey] = useState("DAV1");
+  const [davVaultDavKey, setDavVaultDavKey] = useState(selectedDavId || "DAV1");
 
-  const selectedNetwork = isDavVaultVariant
-    ? (DAV_VAULT_NETWORKS.find((n) => n.key === davVaultNetworkKey) || DAV_VAULT_NETWORKS[0])
-    : null;
-  const effectiveChainId = isDavVaultVariant ? selectedNetwork.chainId : walletChainId;
+  useEffect(() => {
+    setDavVaultDavKey(selectedDavId || "DAV1");
+  }, [selectedDavId]);
+
+  const selectedNetwork = useMemo(
+    () => DAV_VAULT_NETWORKS.find((n) => Number(n.chainId) === Number(walletChainId)) || DAV_VAULT_NETWORKS[0],
+    [walletChainId]
+  );
+  const effectiveChainId = walletChainId;
   const contracts = getContractAddressesForChain(effectiveChainId);
   const [copiedAddress, setCopiedAddress] = useState(null);
 
   useEffect(() => {
     setCopiedAddress(null);
   }, [effectiveChainId, davVaultDavKey]);
+
+  useEffect(() => {
+    if (!isDavVaultVariant) return;
+    setSelectedDavId(davVaultDavKey);
+    setRuntimeSelection({ chainId: effectiveChainId, davId: davVaultDavKey });
+  }, [davVaultDavKey, effectiveChainId, isDavVaultVariant, setSelectedDavId]);
 
   // Escape key closes modal
   useEffect(() => {
@@ -114,7 +128,10 @@ const ContractsModal = ({ isOpen, onClose, embedded = false, uiVariant }) => {
       key,
     }));
 
-  const showDavVaultComingSoon = isDavVaultVariant && !(davVaultNetworkKey === "pulsechain" && davVaultDavKey === "DAV1");
+  const showDavVaultComingSoon = isDavVaultVariant && !contracts?.AUCTION;
+
+  const activeDavSymbol = getDavDisplaySymbol(effectiveChainId, davVaultDavKey) || davVaultDavKey;
+  const activeStateSymbol = getStateDisplaySymbol(effectiveChainId, davVaultDavKey) || davVaultDavKey.replace('DAV', 'STATE');
 
   const content = (
     <div className={`contracts-modal${embedded ? " contracts-embedded" : ""}`} role="document">
@@ -126,23 +143,14 @@ const ContractsModal = ({ isOpen, onClose, embedded = false, uiVariant }) => {
             <div className="contracts-subtitle">
               STATE DEX Protocol • {isDavVaultVariant ? selectedNetwork?.label : "PulseChain"}
             </div>
+            {isDavVaultVariant ? (
+              <div className="contracts-subtitle">Active: {activeDavSymbol} / {activeStateSymbol}</div>
+            ) : null}
           </div>
         </div>
 
         {isDavVaultVariant ? (
           <div className="contracts-header-controls" aria-label="Contracts filters">
-            <select
-              className="contracts-select"
-              value={davVaultNetworkKey}
-              onChange={(e) => setDavVaultNetworkKey(e.target.value)}
-              aria-label="Select network"
-            >
-              {DAV_VAULT_NETWORKS.map((n) => (
-                <option key={n.key} value={n.key}>
-                  {n.label}
-                </option>
-              ))}
-            </select>
             <select
               className="contracts-select"
               value={davVaultDavKey}
@@ -176,7 +184,7 @@ const ContractsModal = ({ isOpen, onClose, embedded = false, uiVariant }) => {
           <div className="contracts-coming-soon" role="status" aria-live="polite">
             <div className="contracts-coming-network">{selectedNetwork?.label}</div>
             <div className="contracts-coming-dav">{davVaultDavKey}</div>
-            <div className="contracts-coming-note">Coming Soon...</div>
+            <div className="contracts-coming-note">Coming Soon... (switch wallet network to view other chain deployments)</div>
           </div>
         ) : (
           <>

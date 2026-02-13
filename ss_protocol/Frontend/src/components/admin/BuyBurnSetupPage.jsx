@@ -6,7 +6,7 @@ import toast from "react-hot-toast";
 import { notifyError, notifySuccess } from "../../Constants/Constants";
 import { TokensDetails } from "../../data/TokensDetails";
 import { formatWithCommas, calculateStateAmmPlsValueNumeric } from "../../Constants/Utils";
-import { PULSEX_ROUTER_ADDRESS, PULSEX_ROUTER_ABI } from "../../Constants/Constants";
+import { PULSEX_ROUTER_ABI } from "../../Constants/Constants";
 import { getRuntimeConfigSync } from "../../Constants/RuntimeConfig";
 import { useChainId } from "wagmi";
 import { useAllTokens } from "../Swap/Tokens";
@@ -117,8 +117,13 @@ export default function BuyBurnSetupPage() {
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
+      const cfg = getRuntimeConfigSync();
+      const runtimeChainId = Number(cfg?.selection?.chainId || cfg?.network?.chainId || chainId || 0);
+      const runtimeRpcUrl = cfg?.network?.rpcUrl;
+      const runtimeRouter = cfg?.dex?.router?.address;
+
       // Don't require signer - use httpProvider for read-only AMM calculation
-      if (chainId !== 369 || stateOutValue == null) {
+      if (Number(chainId) !== runtimeChainId || stateOutValue == null || !runtimeRpcUrl || !runtimeRouter) {
         if (!cancelled) setStateOutPlsValue(stateOutValue === 0 ? 0 : null);
         return;
       }
@@ -128,9 +133,9 @@ export default function BuyBurnSetupPage() {
       }
       try {
         // Use read-only JsonRpcProvider for AMM calculation (no wallet needed)
-        const httpProvider = new ethers.JsonRpcProvider("https://rpc.pulsechain.com");
+        const httpProvider = new ethers.JsonRpcProvider(runtimeRpcUrl);
         const routerContract = new ethers.Contract(
-          PULSEX_ROUTER_ADDRESS,
+          runtimeRouter,
           PULSEX_ROUTER_ABI,
           httpProvider
         );
@@ -791,7 +796,7 @@ export default function BuyBurnSetupPage() {
             <div className="text-muted d-flex align-items-center gap-2">
               <i className="bi bi-exclamation-circle" /> No pool detected yet
             </div>
-          )}}
+          )}
         {/* Before pool exists: show ONLY Create Pool UI */}
         {!(poolStatus?.poolAddress && poolStatus.poolAddress !== ethers.ZeroAddress) && (
           <form onSubmit={handleCreatePool}>

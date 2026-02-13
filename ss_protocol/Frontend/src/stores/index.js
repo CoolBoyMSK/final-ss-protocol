@@ -372,6 +372,35 @@ export const useDavStore = create(
 );
 
 // ============================================
+// DEPLOYMENT STORE - Active DAV/network selection
+// ============================================
+export const useDeploymentStore = create(
+  subscribeWithSelector((set) => ({
+    selectedDavId: 'DAV1',
+
+    setSelectedDavId: (davId) => {
+      const normalized = String(davId || 'DAV1').toUpperCase();
+      const safeDav = ['DAV1', 'DAV2', 'DAV3'].includes(normalized) ? normalized : 'DAV1';
+      set({ selectedDavId: safeDav });
+      try {
+        localStorage.setItem('selectedDavId', safeDav);
+      } catch {}
+    },
+
+    hydrateSelectedDavId: () => {
+      try {
+        const saved = localStorage.getItem('selectedDavId');
+        const normalized = String(saved || 'DAV1').toUpperCase();
+        const safeDav = ['DAV1', 'DAV2', 'DAV3'].includes(normalized) ? normalized : 'DAV1';
+        set({ selectedDavId: safeDav });
+      } catch {
+        set({ selectedDavId: 'DAV1' });
+      }
+    },
+  }))
+);
+
+// ============================================
 // SELECTORS - Optimized selectors for common patterns
 // ============================================
 

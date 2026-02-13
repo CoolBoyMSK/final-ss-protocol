@@ -1,7 +1,9 @@
 import { NavLink, Routes, Route, Navigate } from "react-router-dom";
-import { useState, lazy, Suspense } from "react";
-import { useAccount } from "wagmi";
+import { useState, lazy, Suspense, useMemo } from "react";
+import { useAccount, useChainId } from "wagmi";
 import { useGovernanceGate } from "./useGovernanceGate";
+import { useDeploymentStore } from "../../stores";
+import { getRuntimeConfigSync } from "../../Constants/RuntimeConfig";
 import "../../Styles/Admin.css";
 
 // Route-based code splitting for Admin pages - 5-Step Deployment Workflow
@@ -14,9 +16,22 @@ const GovernancePage = lazy(() => import("./GovernancePage"));
 export default function AdminLayout() {
   const { isGovernance, governanceAddress, loading } = useGovernanceGate();
   const { address } = useAccount();
+  const chainId = useChainId();
+  const selectedDavId = useDeploymentStore((state) => state.selectedDavId);
+  const setSelectedDavId = useDeploymentStore((state) => state.setSelectedDavId);
   
   const effectiveGov = governanceAddress || '';
   const [overrideIn, setOverrideIn] = useState(effectiveGov);
+
+  const networkLabel = useMemo(() => {
+    const cfg = getRuntimeConfigSync();
+    return cfg?.network?.name || (chainId ? `Chain ${chainId}` : 'Unknown Network');
+  }, [chainId, selectedDavId]);
+
+  const symbolPrefix = useMemo(() => {
+    const cfg = getRuntimeConfigSync();
+    return cfg?.network?.symbolPrefix || 'p';
+  }, [chainId, selectedDavId]);
 
   if (loading) {
     return (
@@ -191,6 +206,24 @@ export default function AdminLayout() {
               <span className="governance-address-compact" title={effectiveGov}>
                 {effectiveGov ? `${effectiveGov.slice(0,6)}...${effectiveGov.slice(-4)}` : '—'}
               </span>
+            </div>
+
+            <div className="ms-3 d-flex flex-column align-items-start">
+              <small className="text-light opacity-75 mb-1">
+                {networkLabel}
+              </small>
+              <select
+                className="form-select form-select-sm"
+                style={{ width: 102, height: 26, paddingTop: 0, paddingBottom: 0 }}
+                value={selectedDavId}
+                onChange={(e) => setSelectedDavId(e.target.value)}
+                aria-label="Select DAV deployment"
+                title="Select DAV"
+              >
+                <option value="DAV1">{`${symbolPrefix}DAV1`}</option>
+                <option value="DAV2">{`${symbolPrefix}DAV2`}</option>
+                <option value="DAV3">{`${symbolPrefix}DAV3`}</option>
+              </select>
             </div>
           </div>
         </div>
