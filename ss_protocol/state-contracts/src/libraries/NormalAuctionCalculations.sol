@@ -15,9 +15,9 @@ import "../interfaces/IPair.sol";
  */
 library NormalAuctionCalculations {
 
-    /// @notice Conversion rate: 3000 auction tokens per 1 DAV token
+    /// @notice Conversion rate: 2500 auction tokens per 1 DAV token
     /// @dev Fixed rate set by protocol design (18 decimals)
-    uint256 constant TOKENS_PER_DAV = 3000 ether;
+    uint256 constant TOKENS_PER_DAV = 2500 ether;
     
     /// @notice STATE token bonus multiplier: 2x the pool ratio
     /// @dev Users receive double the market rate as incentive for burning DAV
@@ -44,8 +44,8 @@ library NormalAuctionCalculations {
      * @notice Calculate auction tokens to burn based on available DAV
      * @param availableDav Amount of DAV tokens available for burning (18 decimals)
      * @return tokensToBurn Amount of auction tokens to burn (18 decimals)
-     * @custom:formula tokensToBurn = (availableDav × 3000) ÷ 1e18
-     * @custom:rate 3000 auction tokens per 1 DAV token
+    * @custom:formula tokensToBurn = (availableDav × 2500) ÷ 1e18
+    * @custom:rate 2500 auction tokens per 1 DAV token
      */
     function calculateTokensToBurn(uint256 availableDav) internal pure returns (uint256 tokensToBurn) {
         return (availableDav * TOKENS_PER_DAV) / 1e18;

@@ -4,13 +4,13 @@
 # Run after deployment to verify on Sourcify
 
 # Contract addresses (update these after deployment)
-SWAP_V3="0x8172716bD7117461D4b20bD0434358F74244d4ec"
-STATE_V3="0x4e90670b4cDE8FF7cdDEeAf99AEFD68a114d9C01"
-AUCTION_ADMIN="0xEab50ADaB223f96f139B75430dF7274aE66560Db"
-BUYANDBURN_V2="0xf1Df5CD347A498768A44F7e0549F833525e3b751"
-DAV_V3="0x92263Be97A691216f831CBb20760Eed0b4A96AC5"
-AIRDROP_DISTRIBUTOR="0x813Aefbee80B02142a994D92B8b4F7b7C4F90Be9"
-SWAP_LENS="0x9683fC01A08Db24133B60cE51B4BEB616508a97E"
+SWAP_V3="0x0246Ee42982B0ee671Ec0C007dE366c1c8F4Cf30"
+STATE_V3="0xD46DB85d2fBe4e99f88Ca44c84B04F96D0F8e247"
+AUCTION_ADMIN="0x4E2b1e68E7aEE55ec14c6e9be9438CA8f561a6c8"
+BUYANDBURN_V2="0x864507B2994353F10a11AAe50bba82f154293f26"
+DAV_V3="0x29637505477e9B688628eA1F6269b6971f5869d5"
+AIRDROP_DISTRIBUTOR="0xb797Af3b96f3DF9A8c58d15246370cbbb0f1844d"
+SWAP_LENS="0x01408f83FF10bBA51807418be80E6EA70a91AA4d"
 
 # Constructor arguments
 GOV_ADDRESS="0x0f7F24c7F22e2Ca7052f051A295e1a5D3369cAcE"
@@ -36,7 +36,7 @@ if [ ! -z "$STATE_V3" ]; then
     forge verify-contract \
         --chain-id 369 \
         --verifier sourcify \
-        --constructor-args $(cast abi-encode "constructor(string,string,address)" "PulseSTATE1" "pSTATE1" "$SWAP_V3") \
+        --constructor-args $(cast abi-encode "constructor(string,string,address)" "PulseSTATE2" "pSTATE2" "$SWAP_V3") \
         $STATE_V3 \
         src/StateToken.sol:STATE_V3
     echo ""
@@ -79,7 +79,7 @@ if [ ! -z "$DAV_V3" ]; then
     forge verify-contract \
         --chain-id 369 \
         --verifier sourcify \
-        --constructor-args $(cast abi-encode "constructor(address,address,address,address,address,address,address,string,string)" "$STATE_V3" "$GOV_ADDRESS" "$AUCTION_ADMIN" "$BUYANDBURN_V2" "$SWAP_V3" "$PULSEX_ROUTER_V2" "$WPLS" "PulseDAV1" "pDAV1") \
+        --constructor-args $(cast abi-encode "constructor(address,address,address,address,address,address,address,string,string)" "$STATE_V3" "$GOV_ADDRESS" "$AUCTION_ADMIN" "$BUYANDBURN_V2" "$SWAP_V3" "$PULSEX_ROUTER_V2" "$WPLS" "PulseDAV2" "pDAV2") \
         $DAV_V3 \
         src/DavToken.sol:DAV_V3
     echo ""

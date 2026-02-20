@@ -1,6 +1,5 @@
 import { useState, useEffect, useContext, useMemo, useRef } from "react";
 import { getDAVContractAddress, getSTATEContractAddress } from "../Constants/ContractAddresses";
-import { useSwapContract } from "../Functions/SwapContractFunctions";
 import { useDAvContract } from "../Functions/DavTokenFunctions";
 import { useChainId } from "wagmi";
 import { ContractContext } from "../Functions/ContractInitialize";
@@ -10,15 +9,33 @@ import { generateIdenticon } from "../utils/identicon";
 import { isImageUrl } from "../Constants/Constants";
 import { getCachedContract } from "../utils/contractCache";
 import { createSmartPoller } from "../utils/smartPolling";
+import { useDeploymentStore, useTokenStore, useAuctionStore } from "../stores";
 
 export const shortenAddress = (addr) => (addr ? `${addr.slice(0, 6)}...${addr.slice(-6)}` : "");
 
 export const TokensDetails = () => {
-  // Use context directly for reliable immediate data access
-  const swap = useSwapContract();
-  
+  // Use Zustand stores for data (granular subscriptions, no cascade re-renders)
+  const TokenNames = useTokenStore(state => state.TokenNames);
+  const tokenMap = useTokenStore(state => state.tokenMap);
+  const TokenBalance = useTokenStore(state => state.TokenBalance);
+  const TokenRatio = useTokenStore(state => state.TokenRatio);
+  const burnedAmount = useTokenStore(state => state.burnedAmount);
+  const burnedLPAmount = useTokenStore(state => state.burnedLPAmount);
+  const isTokenRenounce = useTokenStore(state => state.isTokenRenounce);
+  const supportedToken = useTokenStore(state => state.supportedToken);
+  const TokenPariAddress = useTokenStore(state => state.pairAddresses);
+  const CurrentCycleCount = useAuctionStore(state => state.CurrentCycleCount);
+  // Convenience object for existing swap.X accesses throughout this file
+  const swap = useMemo(() => ({
+    TokenNames, tokenMap, TokenBalance, TokenRatio, burnedAmount,
+    burnedLPAmount, isTokenRenounce, supportedToken,
+    TokenPariAddress, CurrentCycleCount,
+  }), [TokenNames, tokenMap, TokenBalance, TokenRatio, burnedAmount,
+    burnedLPAmount, isTokenRenounce, supportedToken, TokenPariAddress, CurrentCycleCount]);
+
   const { Emojies, names } = useDAvContract();
   const chainId = useChainId();
+  const selectedDavId = useDeploymentStore((state) => state.selectedDavId);
   const { AllContracts } = useContext(ContractContext);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -28,6 +45,11 @@ export const TokensDetails = () => {
 
   const getDavAddress = () => getDAVContractAddress(chainId);
   const getStateAddress = () => getSTATEContractAddress(chainId);
+
+  const stateDisplayName = useMemo(() => {
+    const davSuffix = String(selectedDavId || "DAV1").toUpperCase().replace("DAV", "");
+    return /^\d+$/.test(davSuffix) ? `STATE ${davSuffix}` : "STATE";
+  }, [selectedDavId]);
 
   // On-chain name->emoji mapping - memoized
   const nameToEmoji = useMemo(() => {
@@ -40,8 +62,16 @@ export const TokensDetails = () => {
   // Static tokens - memoized to maintain stable reference
   const staticTokens = useMemo(() => [
     { name: "DAV", key: "DAV", displayName: "DAV", address: getDavAddress(), price: 0 },
-    { name: "STATE", key: "state", displayName: "STATE", address: getStateAddress(), price: 0, pairAddress: buyBurnStatePool },
-  ], [chainId, buyBurnStatePool]);
+    { name: "STATE", key: "state", displayName: stateDisplayName, address: getStateAddress(), price: 0, pairAddress: buyBurnStatePool },
+  ], [chainId, buyBurnStatePool, stateDisplayName]);
+
+  // Clear previous DAV's token snapshot immediately on DAV/network switch
+  useEffect(() => {
+    setLoading(true);
+    setDeployedTokens([]);
+    setNameMap({});
+    setRefreshKey((p) => p + 1);
+  }, [chainId, selectedDavId]);
 
   // Fix the fetchDeployed function to properly fetch tokens after buy & burn
   useEffect(() => {
@@ -53,7 +83,7 @@ export const TokensDetails = () => {
           setDeployedTokens([]);
           return;
         }
-        
+
         // Batch fetch all token addresses first
         const addressPromises = [];
         for (let i = 0; i < count; i++) {
@@ -62,20 +92,20 @@ export const TokensDetails = () => {
           );
         }
         const addresses = await Promise.all(addressPromises);
-        
+
         // Filter valid addresses and batch fetch details
         const validAddresses = addresses.filter(addr => addr && addr !== ethers.ZeroAddress);
-        
+
         const detailPromises = validAddresses.map(async (tokenAddress) => {
           try {
             const tokenContract = getCachedContract(tokenAddress, 'ERC20_META', AllContracts.AuctionContract.runner || AllContracts.AuctionContract.provider);
-            
+
             const [tokenName, tokenSymbol, pairAddress] = await Promise.all([
               tokenContract.name().catch(() => 'Unknown'),
               tokenContract.symbol().catch(() => 'TKN'),
               AllContracts.AuctionContract.getPairAddress(tokenAddress).catch(() => ethers.ZeroAddress)
             ]);
-            
+
             return {
               address: tokenAddress,
               name: tokenName,
@@ -88,10 +118,10 @@ export const TokensDetails = () => {
             return null;
           }
         });
-        
+
         const results = await Promise.all(detailPromises);
         const list = results.filter(Boolean);
-        
+
         setDeployedTokens(list);
         console.log(`✅ Fetched ${list.length} deployed tokens from contract`);
       } catch (err) {
@@ -100,7 +130,7 @@ export const TokensDetails = () => {
     };
 
     fetchDeployed();
-    
+
     // Smart polling for deployed tokens: 30s active, 120s idle
     const poller = createSmartPoller(fetchDeployed, {
       activeInterval: 30000,   // 30s when user is active
@@ -109,10 +139,10 @@ export const TokensDetails = () => {
       fetchOnVisible: true,    // Refresh when tab becomes visible
       name: 'deployed-tokens'
     });
-    
+
     poller.start();
     return () => poller.stop();
-  }, [AllContracts?.AuctionContract]);
+  }, [AllContracts?.AuctionContract, chainId, selectedDavId]);
 
   // Dynamic tokens from swap - memoized to prevent recreation on every render
   const dynamicTokens = useMemo(() => {
@@ -129,7 +159,7 @@ export const TokensDetails = () => {
   // Stable reference to dynamic token addresses for dependency tracking
   const dynamicTokenAddrsRef = useRef('');
   const currentDynamicAddrs = dynamicTokens.map(t => (t.address || '').toLowerCase()).filter(a => a && a !== ethers.ZeroAddress.toLowerCase()).sort().join(',');
-  
+
   // Only update ref if addresses actually changed
   if (dynamicTokenAddrsRef.current !== currentDynamicAddrs) {
     dynamicTokenAddrsRef.current = currentDynamicAddrs;
@@ -149,12 +179,12 @@ export const TokensDetails = () => {
             const erc20 = getCachedContract(addr, 'ERC20_NAME', provider);
             const nm = await erc20.name();
             if (!cancelled && nm) setNameMap(prev => ({ ...prev, [addr]: nm }));
-          } catch {}
+          } catch { }
         }
-      } catch {}
+      } catch { }
     })();
     return () => { cancelled = true; };
-  }, [AllContracts?.AuctionContract, currentDynamicAddrs]);
+  }, [AllContracts?.AuctionContract, currentDynamicAddrs, chainId, selectedDavId]);
 
   // Combine and dedupe (prefer earlier entries) - memoized to prevent recreation on every render
   // Place deployedTokens BEFORE dynamicTokens so deployed entries take precedence
@@ -287,7 +317,7 @@ export const TokensDetails = () => {
       setLoading(false);
       return;
     }
-    
+
     const hasAny = Array.isArray(tokens) && tokens.length > 0;
     if (hasAny) { setLoading(false); return; }
     if ((swap.TokenNames || []).length === 0) { setLoading(false); return; }

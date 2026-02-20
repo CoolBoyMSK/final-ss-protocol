@@ -65,7 +65,7 @@ interface IPair {
  * - PulseChain context: extremely low gas costs (1 PLS ≈ 0.00000396 ETH)
  *
  * @custom:workflow
- * 1. User mints DAV by paying 1,500,000 PLS per token
+ * 1. User mints DAV by paying 5,000,000 PLS per token
  * 2. Funds distributed: 80% buyback, 10% holders, 5% dev, 5% referral
  * 3. DAV expires after 30 days (refreshed if transferred from governance)
  * 4. Holders accumulate rewards from subsequent mints
@@ -97,9 +97,9 @@ contract DAV_V3 is
     
     // ============ Protocol Constants ============
     
-    /// @notice Maximum total supply of DAV tokens (includes 100 initial governance mint)
+    /// @notice Maximum total supply of DAV tokens (includes 30 initial governance mint)
     /// @dev Hard cap prevents unlimited inflation - enforced in mintDAV() function
-    ///      Total available for public minting: 9,999,900 DAV (MAX_SUPPLY - INITIAL_GOV_MINT)
+    ///      Total available for public minting: 9,999,970 DAV (MAX_SUPPLY - INITIAL_GOV_MINT)
     uint256 public constant MAX_SUPPLY = 10000000 ether;
     
     /// @notice Maximum number of unique DAV holders allowed
@@ -110,8 +110,8 @@ contract DAV_V3 is
     
     /// @notice Cost to mint 1 DAV token in PLS
     /// @dev PulseChain native token: 1 PLS ≈ 0.00000396 ETH
-    ///      Cost is 3,000,000 PLS per DAV token minted (production)
-    uint256 public constant TOKEN_COST = 3000000 ether;
+    ///      Cost is 5,000,000 PLS per DAV token minted (production)
+    uint256 public constant TOKEN_COST = 5000000 ether;
     
     /// @notice Referral bonus percentage (5% of mint fees)
     /// @dev Added to referrer's claimable holder rewards (not immediately distributed)
@@ -142,7 +142,7 @@ contract DAV_V3 is
     /// @dev Marked as fromGovernance=true to exclude from holder reward distributions
     ///      Used for initial protocol setup, testing, and promotional activities
     ///      These tokens do not earn holder rewards to prevent unfair advantage
-    uint256 public constant INITIAL_GOV_MINT = 100 ether;
+    uint256 public constant INITIAL_GOV_MINT = 30 ether;
     
     /// @notice STATE token contract address
     /// @dev Set automatically in constructor from deployment parameter
@@ -173,7 +173,7 @@ contract DAV_V3 is
     uint256 public totalReferralRewardsDistributed;
     
     /// @notice Total DAV tokens minted via mintDAV() function (public minting)
-    /// @dev Excludes INITIAL_GOV_MINT (2,000 DAV) which is tracked separately
+    /// @dev Excludes INITIAL_GOV_MINT (30 DAV) which is tracked separately
     ///      Combined with INITIAL_GOV_MINT equals total circulating supply
     uint256 public mintedSupply;
     
@@ -313,7 +313,7 @@ contract DAV_V3 is
         pulsexRouter = _pulsexRouter;
         WPLS = _wpls;
         
-        // Mint initial governance allocation (100 DAV)
+        // Mint initial governance allocation (30 DAV)
         _mint(_gov, INITIAL_GOV_MINT);
         mintedSupply += INITIAL_GOV_MINT;
         
@@ -574,7 +574,7 @@ contract DAV_V3 is
     /// - Under 2,500 holder cap
     /// - Caller is not governance
     /// - Under MAX_SUPPLY cap
-    /// - Exact PLS payment (amount × 1,500,000 PLS)
+    /// - Exact PLS payment (amount × 5,000,000 PLS)
     ///
     /// @custom:distribution
     /// - 80% → BuyAndBurnController for STATE buyback
@@ -1085,7 +1085,7 @@ contract DAV_V3 is
      * 
      * @param user Address to calculate ROI for
      * @return totalValueInPLS Total portfolio value in PLS
-     * @return requiredValue Required value based on DAV balance (DAV × 1,500,000 PLS)
+    * @return requiredValue Required value based on DAV balance (DAV × 5,000,000 PLS)
      * @return meetsROI Whether portfolio value >= required value
      * @return roiPercentage ROI as percentage (totalValue × 100 / requiredValue)
      *
@@ -1094,7 +1094,7 @@ contract DAV_V3 is
      * 2. Auction Tokens: Converted to STATE value using pool ratios
      * 3. Claimable Rewards: Accumulated holder distributions + referral bonuses
      * 4. Total Portfolio: STATE value (in PLS) + claimable rewards
-     * 5. Required Value: Total DAV balance × 1,500,000 PLS
+    * 5. Required Value: Total DAV balance × 5,000,000 PLS
      * 6. ROI Check: Portfolio value >= required value
      *
      * @custom:loop-bounds

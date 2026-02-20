@@ -10,7 +10,7 @@ import { getCachedContract, COMMON_ABIS } from "../../utils/contractCache";
 
 const useSwapData = ({ amountIn, tokenIn, tokenOut, TOKENS }) => {
 	const chainId = useChainId();
-	const { signer } = useContext(ContractContext);
+	const { signer, provider: readProvider } = useContext(ContractContext);
 	const { address } = useAccount();
 	const [amountOut, setAmountOut] = useState("");
 	const [estimatedGas, setEstimatedGas] = useState(null);
@@ -78,7 +78,7 @@ const useSwapData = ({ amountIn, tokenIn, tokenOut, TOKENS }) => {
 				const routerContract = getCachedContract(
 					PULSEX_ROUTER_ADDRESS,
 					PULSEX_ROUTER_ABI,
-					signer.provider
+					readProvider || signer?.provider
 				);
 
 				// Get amountOut from router
@@ -93,7 +93,7 @@ const useSwapData = ({ amountIn, tokenIn, tokenOut, TOKENS }) => {
 				const factoryContract = getCachedContract(
 					factoryAddress,
 					PULSEX_FACTORY_ABI,
-					signer.provider
+					readProvider || signer?.provider
 				);
 				const pairAddress = await factoryContract.getPair(tokenInAddress, tokenOutAddress);
 
@@ -156,7 +156,7 @@ const useSwapData = ({ amountIn, tokenIn, tokenOut, TOKENS }) => {
 		const routerContract = getCachedContract(
 			PULSEX_ROUTER_ADDRESS,
 			PULSEX_ROUTER_ABI,
-			signer.provider
+			readProvider || signer?.provider
 		);
 
 		let tokenInAddress = TOKENS[tokenIn]?.address;

@@ -5,9 +5,38 @@ import InfoPage from "../components/Info/InfoPage";
 import ContractsModal from "../components/ContractsModal";
 import { useDeploymentStore } from "../stores";
 import { getRuntimeConfigSync } from "../Constants/RuntimeConfig";
+import { computeManualPhase } from "../utils/auctionTiming";
+
+const DAV2_DEX_START_ANCHOR_UTC = 1771682400; // 2026-02-21 14:00:00 UTC (GMT+3 17:00)
+
+const formatCountdown = (totalSeconds) => {
+  const safe = Math.max(0, Math.floor(Number(totalSeconds || 0)));
+  const days = Math.floor(safe / 86400);
+  const hours = Math.floor((safe % 86400) / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  const seconds = safe % 60;
+
+  const hh = String(hours).padStart(2, "0");
+  const mm = String(minutes).padStart(2, "0");
+  const ss = String(seconds).padStart(2, "0");
+
+  if (days > 0) return `${days}d ${hh}:${mm}:${ss}`;
+  return `${hh}:${mm}:${ss}`;
+};
+
+const resolveInitialRightView = () => {
+  try {
+    const saved = String(localStorage.getItem("davVaultRightView") || "auction").toLowerCase();
+    return saved === "dex" ? "dex" : "auction";
+  } catch {
+    return "auction";
+  }
+};
 
 export default function DavVaultPage() {
-  const [rightView, setRightView] = useState("auction");
+  const [rightView, setRightView] = useState(resolveInitialRightView);
+  const [showDav2TimedCover, setShowDav2TimedCover] = useState(false);
+  const [dav2Countdown, setDav2Countdown] = useState(0);
   const chainId = useChainId();
   const selectedDavId = useDeploymentStore((state) => state.selectedDavId);
   const setSelectedDavId = useDeploymentStore((state) => state.setSelectedDavId);
@@ -75,6 +104,38 @@ export default function DavVaultPage() {
       observer.disconnect();
       if (rafId) cancelAnimationFrame(rafId);
     };
+  }, [rightView]);
+
+  useEffect(() => {
+    const shouldCheckCover = selectedDavId === "DAV2" && (rightView === "dex" || rightView === "auction");
+    if (!shouldCheckCover) {
+      setShowDav2TimedCover(false);
+      setDav2Countdown(0);
+      return;
+    }
+
+    const updateCoverState = () => {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const phase = computeManualPhase(nowSec, {
+        duration: 86400,
+        interval: 0,
+        anchorUtc: DAV2_DEX_START_ANCHOR_UTC,
+      });
+
+      const isBeforeAuctionStart = phase?.phase === "interval";
+      setShowDav2TimedCover(isBeforeAuctionStart);
+      setDav2Countdown(isBeforeAuctionStart ? Math.max(0, Number(phase?.secondsLeft || 0)) : 0);
+    };
+
+    updateCoverState();
+    const timerId = setInterval(updateCoverState, 1000);
+    return () => clearInterval(timerId);
+  }, [selectedDavId, rightView]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("davVaultRightView", rightView === "dex" ? "dex" : "auction");
+    } catch {}
   }, [rightView]);
 
   return (
@@ -179,7 +240,7 @@ export default function DavVaultPage() {
 
                 <div className="d-flex flex-column align-items-center">
                   <div>
-                    JP Morgain (DAV1)
+                    Sandbox (DAV1)
                     <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.95 }}>
                       {symbolFor('DAV1')} - Day {typeof auctionDayNumber === "number" && auctionDayNumber > 0 ? auctionDayNumber : "—"}
                     </div>
@@ -204,7 +265,7 @@ export default function DavVaultPage() {
                 <i className="bi bi-chevron-right" style={{ position: "absolute", right: 14, top: 16, opacity: 0.7 }} />
                 <div className="d-flex flex-column align-items-center">
                   <div>
-                    GM Sachs (DAV2)
+                    JP Morgains (DAV2)
                     <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.9 }}>{symbolFor('DAV2')} - Coming Soon...</div>
                   </div>
                 </div>
@@ -282,7 +343,7 @@ export default function DavVaultPage() {
 
         {/* Right column */}
         <div className="col-12 col-lg-6 d-flex flex-column">
-          <div className="card flex-grow-1 dav-vault-card dav-vault-right-card" style={{ borderRadius: 14, minHeight: 420, overflow: "hidden" }}>
+          <div className="card flex-grow-1 dav-vault-card dav-vault-right-card" style={{ borderRadius: 14, minHeight: 420, overflow: "hidden", position: "relative" }}>
             <div
               className={`dav-vault-embed ${rightView === "dex" ? "dav-vault-info" : rightView === "contracts" ? "dav-vault-contracts" : "dav-vault-auction"}`}
               style={{
@@ -398,6 +459,23 @@ export default function DavVaultPage() {
                 </div>
               )}
             </div>
+            {(rightView === "dex" || rightView === "auction") && selectedDavId === "DAV2" && showDav2TimedCover ? (
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  zIndex: 20,
+                  background: "rgba(0,0,0,0.6)",
+                  backdropFilter: "blur(6px)",
+                }}
+              >
+                <div className="contracts-coming-soon" style={{ minHeight: "100%" }}>
+                  <div className="contracts-coming-network">{`${symbolFor("DAV2")} ${rightView === "auction" ? "AUCTION" : "DEX"}`}</div>
+                  <div className="contracts-coming-dav">Coming Soon...</div>
+                  <div className="contracts-coming-note">{`Auction starts in ${formatCountdown(dav2Countdown)}`}</div>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>

@@ -18,6 +18,7 @@ const pendingRequests = new Map();
 
 // Cache size limits to prevent memory issues
 const MAX_CONTRACT_CACHE_SIZE = 100;
+const MAX_PROVIDER_CACHE_SIZE = 10;
 const MAX_PENDING_REQUESTS_SIZE = 50;
 
 // Common ABIs to avoid re-parsing
@@ -97,30 +98,30 @@ const COMMON_ABIS = {
  */
 export function getCachedContract(address, abi, providerOrSigner) {
   if (!address || !providerOrSigner) return null;
-  
+
   const normalizedAddress = address.toLowerCase();
   const abiKey = typeof abi === 'string' ? abi : JSON.stringify(abi).slice(0, 50);
   const providerKey = providerOrSigner.address || 'provider';
   const cacheKey = `${normalizedAddress}-${abiKey}-${providerKey}`;
-  
+
   if (contractCache.has(cacheKey)) {
     return contractCache.get(cacheKey);
   }
-  
+
   // Resolve ABI if it's a common name
-  const resolvedAbi = typeof abi === 'string' && COMMON_ABIS[abi] 
-    ? COMMON_ABIS[abi] 
+  const resolvedAbi = typeof abi === 'string' && COMMON_ABIS[abi]
+    ? COMMON_ABIS[abi]
     : abi;
-  
+
   try {
     const contract = new ethers.Contract(address, resolvedAbi, providerOrSigner);
-    
+
     // Enforce cache size limit (LRU-style: remove oldest entries)
     if (contractCache.size >= MAX_CONTRACT_CACHE_SIZE) {
       const firstKey = contractCache.keys().next().value;
       contractCache.delete(firstKey);
     }
-    
+
     contractCache.set(cacheKey, contract);
     return contract;
   } catch (e) {
@@ -136,13 +137,20 @@ export function getCachedContract(address, abi, providerOrSigner) {
  */
 export function getCachedProvider(rpcUrl) {
   if (!rpcUrl) return null;
-  
+
   if (providerCache.has(rpcUrl)) {
     return providerCache.get(rpcUrl);
   }
-  
+
   try {
     const provider = new ethers.JsonRpcProvider(rpcUrl);
+
+    // Enforce cache size limit (LRU-style: remove oldest entries)
+    if (providerCache.size >= MAX_PROVIDER_CACHE_SIZE) {
+      const firstKey = providerCache.keys().next().value;
+      providerCache.delete(firstKey);
+    }
+
     providerCache.set(rpcUrl, provider);
     return provider;
   } catch (e) {
@@ -157,7 +165,7 @@ export function getCachedProvider(rpcUrl) {
  */
 export function clearContractCache(address) {
   if (!address) return;
-  
+
   const normalizedAddress = address.toLowerCase();
   for (const key of contractCache.keys()) {
     if (key.startsWith(normalizedAddress)) {
@@ -225,12 +233,12 @@ export async function deduplicatedFetch(key, fetchFn, ttl = 0) {
       return pending.promise;
     }
   }
-  
+
   // Create new request
   const promise = (async () => {
     try {
       const result = await fetchFn();
-      
+
       // Cache result if TTL > 0
       if (ttl > 0) {
         // Enforce pending requests size limit
@@ -246,7 +254,7 @@ export async function deduplicatedFetch(key, fetchFn, ttl = 0) {
         // Remove from pending after completion
         pendingRequests.delete(key);
       }
-      
+
       return result;
     } catch (error) {
       // Remove from pending on error
@@ -254,10 +262,10 @@ export async function deduplicatedFetch(key, fetchFn, ttl = 0) {
       throw error;
     }
   })();
-  
+
   // Store pending promise
   pendingRequests.set(key, { promise });
-  
+
   return promise;
 }
 

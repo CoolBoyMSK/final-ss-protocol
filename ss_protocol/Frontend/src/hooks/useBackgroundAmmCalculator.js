@@ -16,6 +16,7 @@ import { ethers } from 'ethers';
 import { getCachedContract, getCachedProvider } from '../utils/contractCache';
 import { createSmartPoller } from '../utils/smartPolling';
 import { getRuntimeConfigSync } from '../Constants/RuntimeConfig';
+import { useDeploymentStore } from '../stores';
 
 // DEX router is selected from runtime config
 const PULSEX_ROUTER_ABI = [
@@ -24,31 +25,31 @@ const PULSEX_ROUTER_ABI = [
 
 // Cache key and TTL
 // v4: per-token values are STATE-denominated (except STATE shown in PLS)
-const AMM_CACHE_KEY = 'ammValuesCache_v4';
+const AMM_CACHE_KEY_BASE = 'ammValuesCache_v4';
 const AMM_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 // Load cached values
-function loadCache() {
+function loadCache(cacheKey) {
   try {
-    const cached = localStorage.getItem(AMM_CACHE_KEY);
+    const cached = localStorage.getItem(cacheKey);
     if (!cached) return null;
     const parsed = JSON.parse(cached);
     if (parsed.timestamp && (Date.now() - parsed.timestamp) < AMM_CACHE_TTL) {
       return parsed;
     }
-  } catch {}
+  } catch { }
   return null;
 }
 
 // Save to cache
-function saveCache(values, totalSum) {
+function saveCache(cacheKey, values, totalSum) {
   try {
-    localStorage.setItem(AMM_CACHE_KEY, JSON.stringify({
+    localStorage.setItem(cacheKey, JSON.stringify({
       values,
       totalSum,
       timestamp: Date.now()
     }));
-  } catch {}
+  } catch { }
 }
 
 // Format number with commas
@@ -82,19 +83,22 @@ function formatWeiToDisplay(wei) {
 }
 
 export function useBackgroundAmmCalculator(sortedTokens, tokenBalances, chainId, TOKENS) {
+  const selectedDavId = useDeploymentStore((state) => state.selectedDavId);
+  const cacheKey = `${AMM_CACHE_KEY_BASE}_${Number(chainId || 0)}_${String(selectedDavId || 'DAV1').toUpperCase()}`;
+
   // Load cached values for instant display
   const [ammValuesMap, setAmmValuesMap] = useState(() => {
-    const cached = loadCache();
+    const cached = loadCache(cacheKey);
     return cached?.values || {};
   });
-  
+
   const [totalSum, setTotalSum] = useState(() => {
-    const cached = loadCache();
+    const cached = loadCache(cacheKey);
     return cached?.totalSum || "0";
   });
-  
+
   const [isCalculating, setIsCalculating] = useState(false);
-  
+
   // Refs for background calculation management - prevents memory leaks
   const mountedRef = useRef(true);
   const lastCalcTimeRef = useRef(0);
@@ -104,11 +108,11 @@ export function useBackgroundAmmCalculator(sortedTokens, tokenBalances, chainId,
   const providerRpcRef = useRef('');
   const routerAddressRef = useRef('');
   const isCalculatingRef = useRef(false); // Prevent concurrent calculations
-  
+
   // Get addresses from TOKENS object (same pattern as Utils.js)
   const getTokensAddresses = useCallback(() => {
     if (!TOKENS) return { stateAddress: null, wplsAddress: null };
-    
+
     const stateAddress = TOKENS["STATE"]?.address;
     // Try both "Wrapped Pulse" and check for WPLS symbol
     let wplsAddress = TOKENS["Wrapped Pulse"]?.address;
@@ -117,10 +121,10 @@ export function useBackgroundAmmCalculator(sortedTokens, tokenBalances, chainId,
       const wplsEntry = Object.values(TOKENS).find(t => t.symbol === 'WPLS');
       wplsAddress = wplsEntry?.address;
     }
-    
+
     return { stateAddress, wplsAddress };
   }, [TOKENS]);
-  
+
   // Initialize provider lazily using cache
   const getRouter = useCallback(() => {
     const runtimeCfg = getRuntimeConfigSync();
@@ -144,15 +148,15 @@ export function useBackgroundAmmCalculator(sortedTokens, tokenBalances, chainId,
     }
     return routerRef.current;
   }, []);
-  
+
   // Safely parse balance to wei - handles string/number/float issues
   const safeParseBalance = useCallback((balance, decimals = 18) => {
     try {
       if (!balance || balance === '0' || balance === 0) return 0n;
-      
+
       // Convert to string and handle floats
       let balStr = String(balance);
-      
+
       // If it's a float, truncate to max decimals
       if (balStr.includes('.')) {
         const parts = balStr.split('.');
@@ -161,11 +165,11 @@ export function useBackgroundAmmCalculator(sortedTokens, tokenBalances, chainId,
           balStr = parts[0] + '.' + decPart.slice(0, decimals);
         }
       }
-      
+
       // Handle very small or very large numbers
       const num = Number(balStr);
       if (!Number.isFinite(num) || num <= 0) return 0n;
-      
+
       return ethers.parseUnits(balStr, decimals);
     } catch (e) {
       console.warn('Failed to parse balance:', balance, e);
@@ -189,15 +193,15 @@ export function useBackgroundAmmCalculator(sortedTokens, tokenBalances, chainId,
     if (!balance || balance === '0' || balance === 0) {
       return 0n;
     }
-    
+
     // Get addresses from TOKENS object (same as Utils.js)
     const tokenAddress = TOKENS?.[tokenName]?.address;
     const { stateAddress, wplsAddress } = getTokensAddresses();
-    
+
     if (!tokenAddress || !stateAddress || !wplsAddress) {
       return 0n;
     }
-    
+
     try {
       const router = getRouter();
       if (!router) return 0n;
@@ -205,40 +209,46 @@ export function useBackgroundAmmCalculator(sortedTokens, tokenBalances, chainId,
       if (balanceWei === 0n) {
         return 0n;
       }
-      
+
       // Ensure proper checksum addresses
       const checksumToken = toChecksumAddress(tokenAddress);
       const checksumState = toChecksumAddress(stateAddress);
-      
+
       // Step 1: TOKEN → STATE
       const path1 = [checksumToken, checksumState];
       const amounts1 = await router.getAmountsOut(balanceWei, path1);
       const stateAmountWei = amounts1[amounts1.length - 1];
-      
+
       return stateAmountWei || 0n;
     } catch {
       return 0n;
     }
   }, [TOKENS, getTokensAddresses, getRouter, safeParseBalance, toChecksumAddress]);
-  
+
   const parseStateWei = useCallback((stateBalance) => safeParseBalance(stateBalance, 18), [safeParseBalance]);
-  
+
   // Background calculation with UI-safe batching and memory protection
   const runBackgroundCalculation = useCallback(async () => {
     // Skip if not on PulseChain or missing data
     if (chainId !== 369 || !sortedTokens?.length || !tokenBalances || !TOKENS) {
       return;
     }
-    
+
+    // Skip if the only tokens are DAV and STATE (new deployment, no auction tokens yet)
+    const hasAuctionTokens = sortedTokens.some(t => t.tokenName !== 'DAV' && t.tokenName !== 'STATE');
+    if (!hasAuctionTokens) {
+      return;
+    }
+
     // Prevent concurrent calculations (memory protection)
     if (isCalculatingRef.current) {
       return;
     }
-    
+
     isCalculatingRef.current = true;
     const calcId = ++calculationIdRef.current;
     setIsCalculating(true);
-    
+
     try {
       const stateWeiByToken = {};
       let totalStateWei = 0n;
@@ -267,13 +277,13 @@ export function useBackgroundAmmCalculator(sortedTokens, tokenBalances, chainId,
         stateWeiByToken[tokenName] = stateWei;
         if (tokenName !== 'DAV') totalStateWei += stateWei;
       }
-      
+
       // Check if calculation was superseded or component unmounted
       if (!mountedRef.current || calcId !== calculationIdRef.current) {
         isCalculatingRef.current = false;
         return;
       }
-      
+
       // Convert the aggregated STATE total into PLS once
       let formattedTotal = '0';
       let totalPlsWei = 0n;
@@ -336,11 +346,11 @@ export function useBackgroundAmmCalculator(sortedTokens, tokenBalances, chainId,
 
         results[tokenName] = formatWeiToDisplay(tokenStateWei);
       }
-      
+
       setAmmValuesMap(results);
       setTotalSum(formattedTotal);
-      saveCache(results, formattedTotal);
-      
+      saveCache(cacheKey, results, formattedTotal);
+
       lastCalcTimeRef.current = Date.now();
     } catch (error) {
       console.warn('AMM calculation error:', error);
@@ -350,38 +360,38 @@ export function useBackgroundAmmCalculator(sortedTokens, tokenBalances, chainId,
         setIsCalculating(false);
       }
     }
-  }, [chainId, sortedTokens, tokenBalances, TOKENS, calculateTokenStateWei, getRouter, getTokensAddresses, parseStateWei, toChecksumAddress]);
-  
+  }, [cacheKey, chainId, sortedTokens, tokenBalances, TOKENS, calculateTokenStateWei, getRouter, getTokensAddresses, parseStateWei, toChecksumAddress]);
+
   // Trigger calculation - runs immediately for speed
   const triggerCalculation = useCallback((force = false) => {
     if (chainId !== 369 || !sortedTokens?.length || !TOKENS) return;
-    
+
     const now = Date.now();
     const hasValues = Object.keys(ammValuesMap).length > 0;
-    
+
     // Skip if calculated recently (unless forced)
     if (!force && hasValues && now - lastCalcTimeRef.current < 3000) {
       return;
     }
-    
+
     // Run immediately - no delays
     runBackgroundCalculation();
   }, [chainId, sortedTokens, TOKENS, ammValuesMap, runBackgroundCalculation]);
-  
+
   // Initial calculation and periodic refresh
   useEffect(() => {
     mountedRef.current = true;
-    
+
     if (chainId !== 369 || !sortedTokens?.length || !TOKENS) return;
-    
+
     const hasBalances = tokenBalances && Object.keys(tokenBalances).length > 0;
     const hasValues = Object.keys(ammValuesMap).length > 0;
-    
+
     // Run immediately if we have balances
     if (hasBalances && !hasValues) {
       runBackgroundCalculation();
     }
-    
+
     // Smart polling for AMM (heavier RPC): 30s active, 120s idle
     const poller = createSmartPoller(() => {
       if (mountedRef.current && hasBalances) {
@@ -394,34 +404,42 @@ export function useBackgroundAmmCalculator(sortedTokens, tokenBalances, chainId,
       fetchOnVisible: true,    // Refresh when tab becomes visible
       name: 'amm-calculator'
     });
-    
+
     poller.start();
-    
+
     return () => {
       mountedRef.current = false;
       poller.stop();
     };
   }, [chainId, sortedTokens?.length, TOKENS, Object.keys(tokenBalances || {}).length]);
-  
+
   // Manual refresh function
   const refreshNow = useCallback(() => {
     lastCalcTimeRef.current = 0;
     runBackgroundCalculation();
   }, [runBackgroundCalculation]);
-  
+
+  useEffect(() => {
+    const cached = loadCache(cacheKey);
+    setAmmValuesMap(cached?.values || {});
+    setTotalSum(cached?.totalSum || '0');
+    lastCalcTimeRef.current = 0;
+    isCalculatingRef.current = false;
+  }, [cacheKey]);
+
   // Trigger when token balances first become available
   const balanceKeysRef = useRef(0);
   useEffect(() => {
     const currentKeyCount = Object.keys(tokenBalances || {}).length;
     const previousKeyCount = balanceKeysRef.current;
-    
+
     if (currentKeyCount > 0 && previousKeyCount === 0 && TOKENS) {
       runBackgroundCalculation();
     }
-    
+
     balanceKeysRef.current = currentKeyCount;
   }, [tokenBalances, TOKENS, runBackgroundCalculation]);
-  
+
   return {
     ammValuesMap,
     totalSum,

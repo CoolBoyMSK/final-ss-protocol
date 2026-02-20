@@ -1,9 +1,12 @@
 import { NavLink, Routes, Route, Navigate } from "react-router-dom";
-import { useState, lazy, Suspense, useMemo } from "react";
+import { lazy, Suspense, useMemo } from "react";
 import { useAccount, useChainId } from "wagmi";
 import { useGovernanceGate } from "./useGovernanceGate";
 import { useDeploymentStore } from "../../stores";
 import { getRuntimeConfigSync } from "../../Constants/RuntimeConfig";
+import pulseLogo from "../../assets/pls1.png";
+import polygonLogo from "../../assets/matic-token-icon.png";
+import sonicLogo from "../../assets/S_token.svg";
 import "../../Styles/Admin.css";
 
 // Route-based code splitting for Admin pages - 5-Step Deployment Workflow
@@ -21,7 +24,6 @@ export default function AdminLayout() {
   const setSelectedDavId = useDeploymentStore((state) => state.setSelectedDavId);
   
   const effectiveGov = governanceAddress || '';
-  const [overrideIn, setOverrideIn] = useState(effectiveGov);
 
   const networkLabel = useMemo(() => {
     const cfg = getRuntimeConfigSync();
@@ -32,6 +34,22 @@ export default function AdminLayout() {
     const cfg = getRuntimeConfigSync();
     return cfg?.network?.symbolPrefix || 'p';
   }, [chainId, selectedDavId]);
+
+  const networkDisplayName = useMemo(() => {
+    const n = String(networkLabel || '').toLowerCase();
+    if (n.includes('pulse')) return 'Pulsechain';
+    if (n.includes('sonic')) return 'Sonic';
+    if (n.includes('polygon')) return 'Polygon';
+    if (n.includes('ethereum')) return 'Ethereum';
+    return chainId ? `Chain ${chainId}` : 'Unknown';
+  }, [networkLabel, chainId]);
+
+  const networkLogo = useMemo(() => {
+    if (chainId === 369) return pulseLogo;
+    if (chainId === 146) return sonicLogo;
+    if (chainId === 137) return polygonLogo;
+    return null;
+  }, [chainId]);
 
   if (loading) {
     return (
@@ -99,38 +117,6 @@ export default function AdminLayout() {
               </div>
             </div>
 
-            <div className="admin-override-section">
-              <div className="override-header">
-                <h6 className="mb-0">Developer Override</h6>
-                <small className="text-muted">For testing purposes only</small>
-              </div>
-              <div className="row g-2">
-                <div className="col-md-8">
-                  <input 
-                    className="form-control override-input" 
-                    placeholder="0x... governance address override" 
-                    value={overrideIn} 
-                    onChange={e => setOverrideIn(e.target.value)} 
-                  />
-                </div>
-                <div className="col-md-4">
-                  <button 
-                    className="btn btn-primary w-100 override-btn" 
-                    onClick={() => { 
-                      try { 
-                        localStorage.setItem('GOVERNANCE_OVERRIDE', overrideIn); 
-                        window.location.reload(); 
-                      } catch(e) {
-                        console.error('Failed to set override:', e);
-                      } 
-                    }}
-                  >
-                    <i className="bi bi-key-fill me-2"></i>
-                    Apply Override
-                  </button>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -143,16 +129,30 @@ export default function AdminLayout() {
       <nav className="navbar navbar-expand-lg bg-dark py-2">
         <div className="container d-flex justify-content-between align-items-center w-100">
           {/* Left: Logo and Title */}
-          <div className="navbar-brand text-light pb-0 mb-0">
-            <label
-              className="uppercase fs-2 fw-bolder"
-              style={{ fontFamily: "Satoshi, sans-serif" }}
+          <div className="navbar-brand text-light pb-0 mb-0 me-0 d-flex align-items-center gap-2" style={{ marginLeft: '0px' }}>
+            {networkLogo ? (
+              <img
+                src={networkLogo}
+                alt={`${networkDisplayName} logo`}
+                style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }}
+              />
+            ) : (
+              <span style={{ width: 36, height: 36, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', border: '1px solid rgba(255,255,255,0.3)' }}>
+                <i className="bi bi-globe2"></i>
+              </span>
+            )}
+            <select
+              className="form-select form-select-sm"
+              style={{ width: 118, height: 28, paddingTop: 0, paddingBottom: 0 }}
+              value={selectedDavId}
+              onChange={(e) => setSelectedDavId(e.target.value)}
+              aria-label="Select DAV deployment"
+              title="Select DAV"
             >
-              STATE DEX ADMIN
-            </label>
-            <p className="detailAmount mb-0" style={{ fontSize: "0.8rem" }}>
-              Governance Administration Panel
-            </p>
+              <option value="DAV1">{`${symbolPrefix}DAV1`}</option>
+              <option value="DAV2">{`${symbolPrefix}DAV2`}</option>
+              <option value="DAV3">{`${symbolPrefix}DAV3`}</option>
+            </select>
           </div>
 
           {/* Right: Admin Navigation */}
@@ -208,23 +208,6 @@ export default function AdminLayout() {
               </span>
             </div>
 
-            <div className="ms-3 d-flex flex-column align-items-start">
-              <small className="text-light opacity-75 mb-1">
-                {networkLabel}
-              </small>
-              <select
-                className="form-select form-select-sm"
-                style={{ width: 102, height: 26, paddingTop: 0, paddingBottom: 0 }}
-                value={selectedDavId}
-                onChange={(e) => setSelectedDavId(e.target.value)}
-                aria-label="Select DAV deployment"
-                title="Select DAV"
-              >
-                <option value="DAV1">{`${symbolPrefix}DAV1`}</option>
-                <option value="DAV2">{`${symbolPrefix}DAV2`}</option>
-                <option value="DAV3">{`${symbolPrefix}DAV3`}</option>
-              </select>
-            </div>
           </div>
         </div>
       </nav>

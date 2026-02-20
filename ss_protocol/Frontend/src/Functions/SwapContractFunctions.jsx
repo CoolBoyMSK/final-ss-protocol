@@ -44,18 +44,24 @@ export const SwapContractProvider = ({ children }) => {
   useEffect(() => {
     if (!walletClient) return;
 
-    walletClient.transport?.on?.('chainChanged', () => {
-      window.location.reload();
-    });
+    const handleChainChanged = () => window.location.reload();
+    walletClient.transport?.on?.('chainChanged', handleChainChanged);
 
+    let providerInstance = null;
     // For injected providers like MetaMask
     connector?.getProvider().then((provider) => {
       if (provider?.on) {
-        provider.on('chainChanged', () => {
-          window.location.reload();
-        });
+        providerInstance = provider;
+        provider.on('chainChanged', handleChainChanged);
       }
     });
+
+    return () => {
+      walletClient.transport?.removeListener?.('chainChanged', handleChainChanged);
+      if (providerInstance?.removeListener) {
+        providerInstance.removeListener('chainChanged', handleChainChanged);
+      }
+    };
   }, [walletClient, connector]);
   // Get contract addresses for the connected chain
   const getDavAddress = () => getDAVContractAddress(chainId);
@@ -67,7 +73,7 @@ export const SwapContractProvider = ({ children }) => {
   const isMountedRef = useRef(true);
   const backgroundRefreshInProgressRef = useRef(false);
   const backgroundRefreshTimeoutRef = useRef(null);
-  
+
   // Cleanup on unmount
   useEffect(() => {
     isMountedRef.current = true;
@@ -85,11 +91,11 @@ export const SwapContractProvider = ({ children }) => {
     if (backgroundRefreshTimeoutRef.current) {
       clearTimeout(backgroundRefreshTimeoutRef.current);
     }
-    
+
     backgroundRefreshTimeoutRef.current = setTimeout(async () => {
       // Skip if already in progress or component unmounted
       if (backgroundRefreshInProgressRef.current || !isMountedRef.current) return;
-      
+
       backgroundRefreshInProgressRef.current = true;
       try {
         // Only fetch if component is still mounted
@@ -104,31 +110,67 @@ export const SwapContractProvider = ({ children }) => {
     }, 500);
   }, []);
 
-  const [claiming, setClaiming] = useState(false);
-  const [txStatusForSwap, setTxStatusForSwap] = useState("");
-  const [txStatusForAdding, setTxStatusForAdding] = useState("");
-  const [TotalCost, setTotalCost] = useState(null);
-  // Live-fetched (Gecko) 24h price change percentage used by "Liquidity Strength" UI.
-  // Keep empty until fetched to avoid showing an incorrect initial 0%.
-  const [DaipriceChange, setDaiPriceChange] = useState("");
-  const [InputAmount, setInputAmount] = useState({});
-  const [AirDropAmount, setAirdropAmount] = useState("0.0");
-  const [AuctionTime, setAuctionTime] = useState({});
-  // Phase of today's auction window vs interval
-  const [auctionPhase, setAuctionPhase] = useState(null); // 'active' | 'interval' | null
-  const [auctionPhaseSeconds, setAuctionPhaseSeconds] = useState(0);
-  const [auctionPhaseEndAt, setAuctionPhaseEndAt] = useState(0);
-  // Chain-anchored absolute end timestamps (in seconds since epoch) keyed by token name
-  const [AuctionEndAt, setAuctionEndAt] = useState({});
-  // Measured skew between chain time and local wall clock (chainNow - localNowSec)
-  const [chainTimeSkew, setChainTimeSkew] = useState(0);
+  // ============ STORE-BACKED STATE ============
+  // Each setter writes to BOTH local state (for internal closures) AND the Zustand store.
+  // This eliminates the need for sync useEffects that caused cascade re-renders.
+  // Consumers read from stores directly (not from Context).
+
+  // --- UI Store backed state ---
+  const [claiming, _setClaiming] = useState(false);
+  const setClaiming = useCallback((v) => { _setClaiming(v); useUIStore.getState().setBatch({ claiming: v }); }, []);
+  const [txStatusForSwap, _setTxStatusForSwap] = useState("");
+  const setTxStatusForSwap = useCallback((v) => { _setTxStatusForSwap(v); useUIStore.getState().setBatch({ txStatusForSwap: v }); }, []);
+  const [txStatusForAdding, _setTxStatusForAdding] = useState("");
+  const setTxStatusForAdding = useCallback((v) => { _setTxStatusForAdding(v); useUIStore.getState().setBatch({ txStatusForAdding: v }); }, []);
+
+  // --- Auction Store backed state ---
+  const [TotalCost, _setTotalCost] = useState(null);
+  const setTotalCost = useCallback((v) => { _setTotalCost(v); useAuctionStore.getState().setBatch({ TotalCost: v }); }, []);
+  const [DaipriceChange, _setDaiPriceChange] = useState("");
+  const setDaiPriceChange = useCallback((v) => { _setDaiPriceChange(v); useTokenStore.getState().setBatch({ DaipriceChange: v }); }, []);
+  const [InputAmount, _setInputAmount] = useState({});
+  const setInputAmount = useCallback((v) => { _setInputAmount(v); useAuctionStore.getState().setBatch({ InputAmount: v }); }, []);
+  const [AirDropAmount, _setAirdropAmount] = useState("0.0");
+  const setAirdropAmount = useCallback((v) => { _setAirdropAmount(v); useAuctionStore.getState().setBatch({ AirDropAmount: v }); }, []);
+  const resolveStateUpdate = (nextValue, prevValue) => (typeof nextValue === 'function' ? nextValue(prevValue) : nextValue);
+  const [AuctionTime, _setAuctionTime] = useState({});
+  const setAuctionTime = useCallback((v) => {
+    _setAuctionTime((prev) => {
+      const resolved = resolveStateUpdate(v, prev);
+      useAuctionStore.getState().setBatch({ auctionTime: resolved, AuctionTime: resolved });
+      return resolved;
+    });
+  }, []);
+  const [auctionPhase, _setAuctionPhase] = useState(null);
+  const setAuctionPhase = useCallback((v) => {
+    _setAuctionPhase((prev) => {
+      const resolved = resolveStateUpdate(v, prev);
+      useAuctionStore.getState().setBatch({ auctionPhase: resolved });
+      return resolved;
+    });
+  }, []);
+  const [auctionPhaseSeconds, _setAuctionPhaseSeconds] = useState(0);
+  const setAuctionPhaseSeconds = useCallback((v) => {
+    _setAuctionPhaseSeconds((prev) => {
+      const resolved = resolveStateUpdate(v, prev);
+      useAuctionStore.getState().setBatch({ auctionPhaseSeconds: resolved });
+      return resolved;
+    });
+  }, []);
+  const [auctionPhaseEndAt, _setAuctionPhaseEndAt] = useState(0);
+  const setAuctionPhaseEndAt = useCallback((v) => { _setAuctionPhaseEndAt(v); }, []);
+  const [AuctionEndAt, _setAuctionEndAt] = useState({});
+  const setAuctionEndAt = useCallback((v) => { _setAuctionEndAt(v); useAuctionStore.getState().setBatch({ auctionEndAt: v }); }, []);
+  const [chainTimeSkew, _setChainTimeSkew] = useState(0);
+  const setChainTimeSkew = useCallback((v) => { _setChainTimeSkew(v); useAuctionStore.getState().setBatch({ chainTimeSkew: v }); }, []);
   const auctionEndAtRef = useRef({});
   const phaseEndAtRef = useRef(0);
   const chainSkewRef = useRef(0);
-  // Track the last active auction end time to compute interval countdowns accurately
   const lastActiveEndAtRef = useRef(0);
-  const [TokenPariAddress, setPairAddresses] = useState({});
-  const [CurrentCycleCount, setCurrentCycleCount] = useState({});
+  const [TokenPariAddress, _setPairAddresses] = useState({});
+  const setPairAddresses = useCallback((v) => { _setPairAddresses(v); useTokenStore.getState().setBatch({ tokenPairAddress: v, pairAddresses: v }); }, []);
+  const [CurrentCycleCount, _setCurrentCycleCount] = useState({});
+  const setCurrentCycleCount = useCallback((v) => { _setCurrentCycleCount(v); useAuctionStore.getState().setBatch({ CurrentCycleCount: v }); useTokenStore.getState().setBatch({ currentCycleCount: v }); }, []);
 
   // Helper to robustly resolve today's token address from the Auction contract
   const getTodayTokenAddress = useCallback(async (contractInstance) => {
@@ -158,7 +200,7 @@ export const SwapContractProvider = ({ children }) => {
     // Nothing resolvable
     return null;
   }, [AllContracts?.AuctionContract, AllContracts?.swapLens]);
-  
+
   // Prefer SwapLens for unified, non-reverting daily status when available
   const getTodayStatusViaLens = useCallback(async () => {
     try {
@@ -171,14 +213,13 @@ export const SwapContractProvider = ({ children }) => {
       const token = ts?.[0] || ts?.tokenOfDay || ethers.ZeroAddress;
       const activeWindow = (ts?.[1] ?? ts?.activeWindow) === true;
       const isReverse = (ts?.[2] ?? ts?.isReverse) === true;
-      // Lens secondsLeft is end-of-day. For auction timers, prefer on-chain timeLeft during active window
       let secondsLeft = Number(ts?.[4] ?? ts?.secondsLeft ?? 0);
       if (activeWindow && token && token !== ethers.ZeroAddress) {
         try {
           const readOnly = swap.connect(provider || AllContracts?.provider || undefined);
           const t = await readOnly.getAuctionTimeLeft(token);
           secondsLeft = Math.max(0, Math.floor(Number(t)));
-        } catch {}
+        } catch { }
       }
       return { tokenOfDay: token, activeWindow, isReverse, secondsLeft };
     } catch (e) {
@@ -186,59 +227,101 @@ export const SwapContractProvider = ({ children }) => {
       return null;
     }
   }, [AllContracts?.AuctionContract, AllContracts?.swapLens]);
-  const [OutPutAmount, setOutputAmount] = useState({});
-  const [TokenRatio, setTokenRatio] = useState({});
-  const [TimeLeftClaim, setTimeLeftClaim] = useState({});
-  const [TokenBalance, setTokenbalance] = useState({});
-  const [StateBalance, setStateBalance] = useState("");
-  const [isReversed, setIsReverse] = useState({});
-  const [IsAuctionActive, setisAuctionActive] = useState({});
-  const [isTokenRenounce, setRenonced] = useState({});
-  const [tokenMap, setTokenMap] = useState({});
-  const [TokenNames, setTokenNames] = useState([]);
-  // Total tokens burned per token (contract getTotalTokensBurned)
-  const [burnedAmount, setBurnedAmount] = useState({});
-  
-  // Today's live token data (fetched centrally, shared with all components)
-  const [todayTokenAddress, setTodayTokenAddress] = useState("");
-  const [todayTokenSymbol, setTodayTokenSymbol] = useState("");
-  const [todayTokenName, setTodayTokenName] = useState("");
-  const [todayTokenDecimals, setTodayTokenDecimals] = useState(18);
-  // Reverse window flag for the active token (via SwapLens when available)
-  const [reverseWindowActive, setReverseWindowActive] = useState(null);
 
-  const [buttonTextStates, setButtonTextStates] = useState({});
-  const [DexbuttonTextStates, setDexButtonTextStates] = useState({});
-  const [swappingStates, setSwappingStates] = useState({});
-  const [DexswappingStates, setDexSwappingStates] = useState({});
+  // --- Token Store backed state ---
+  const [OutPutAmount, _setOutputAmount] = useState({});
+  const setOutputAmount = useCallback((v) => { _setOutputAmount(v); useAuctionStore.getState().setBatch({ OutPutAmount: v }); }, []);
+  const [TokenRatio, _setTokenRatio] = useState({});
+  const setTokenRatio = useCallback((v) => { _setTokenRatio(v); useTokenStore.getState().setBatch({ tokenRatio: v, TokenRatio: v, tokenRatios: v, RatioTargetsofTokens: v }); }, []);
+  const [TimeLeftClaim, _setTimeLeftClaim] = useState({});
+  const setTimeLeftClaim = useCallback((v) => { _setTimeLeftClaim(v); useTokenStore.getState().setBatch({ TimeLeftClaim: v }); }, []);
+  const [TokenBalance, _setTokenbalance] = useState({});
+  const setTokenbalance = useCallback((v) => { _setTokenbalance(v); useTokenStore.getState().setBatch({ tokenBalance: v, TokenBalance: v, tokenBalances: v }); }, []);
+  const [StateBalance, _setStateBalance] = useState("");
+  const setStateBalance = useCallback((v) => { _setStateBalance(v); useUserStore.getState().setBatch({ state_Balance: v }); }, []);
+  const [isReversed, _setIsReverse] = useState({});
+  const setIsReverse = useCallback((v) => { _setIsReverse(v); useTokenStore.getState().setBatch({ isReversed: v }); useAuctionStore.getState().setBatch({ isReversed: v }); }, []);
+  const [IsAuctionActive, _setisAuctionActive] = useState({});
+  const setisAuctionActive = useCallback((v) => { _setisAuctionActive(v); useTokenStore.getState().setBatch({ isAuctionActive: v }); useAuctionStore.getState().setBatch({ IsAuctionActive: v }); }, []);
+  const [isTokenRenounce, _setRenonced] = useState({});
+  const setRenonced = useCallback((v) => { _setRenonced(v); useTokenStore.getState().setBatch({ isTokenRenounce: v, renounceStatus: v }); }, []);
+  const [tokenMap, _setTokenMap] = useState({});
+  const setTokenMap = useCallback((v) => { _setTokenMap(v); useTokenStore.getState().setBatch({ tokenMap: v }); }, []);
+  const [TokenNames, _setTokenNames] = useState([]);
+  const setTokenNames = useCallback((v) => { _setTokenNames(v); useTokenStore.getState().setBatch({ tokenNames: v, TokenNames: v }); }, []);
+  const [burnedAmount, _setBurnedAmount] = useState({});
+  const setBurnedAmount = useCallback((v) => { _setBurnedAmount(v); useTokenStore.getState().setBatch({ burnedAmount: v, burnedAmounts: v }); }, []);
 
-  const [userHashSwapped, setUserHashSwapped] = useState({});
-  const [userHasBurned, setUserHasBurned] = useState({}); // normal step 2 completion
-  const [userReverseStep1, setUserReverseStep1] = useState({}); // reverse step1 completion
-  const [userReverseStep2, setUserReverseStep2] = useState({}); // reverse step2 completion
-  const [DavAddress, setDavAddress] = useState("");
-  const [supportedToken, setIsSupported] = useState(false);
-  const [UsersSupportedTokens, setUsersSupportedTokens] = useState("");
-  const [StateAddress, setStateAddress] = useState("");
-  const [AirdropClaimed, setAirdropClaimed] = useState({});
-  const [userHasReverseSwapped, setUserHasReverseSwapped] = useState({});
+  // --- Today's live token data ---
+  const [todayTokenAddress, _setTodayTokenAddress] = useState("");
+  const setTodayTokenAddress = useCallback((v) => { _setTodayTokenAddress(v); useAuctionStore.getState().setBatch({ todayToken: v, todayTokenAddress: v }); }, []);
+  const [todayTokenSymbol, _setTodayTokenSymbol] = useState("");
+  const setTodayTokenSymbol = useCallback((v) => { _setTodayTokenSymbol(v); useAuctionStore.getState().setBatch({ todayTokenSymbol: v }); }, []);
+  const [todayTokenName, _setTodayTokenName] = useState("");
+  const setTodayTokenName = useCallback((v) => { _setTodayTokenName(v); useAuctionStore.getState().setBatch({ todayTokenName: v }); }, []);
+  const [todayTokenDecimals, _setTodayTokenDecimals] = useState(18);
+  const setTodayTokenDecimals = useCallback((v) => { _setTodayTokenDecimals(v); useAuctionStore.getState().setBatch({ todayTokenDecimals: v }); }, []);
+  const [reverseWindowActive, _setReverseWindowActive] = useState(null);
+  const setReverseWindowActive = useCallback((v) => { _setReverseWindowActive(v); useAuctionStore.getState().setBatch({ isReverse: v, reverseWindowActive: v }); }, []);
 
-  const [isCliamProcessing, setIsCllaimProccessing] = useState(null);
-  // Reverse Step 1 STATE received per token (for UI hints)
-  const [reverseStateMap, setReverseStateMap] = useState({});
+  // --- UI Store backed state (buttons, processing) ---
+  const [buttonTextStates, _setButtonTextStates] = useState({});
+  const setButtonTextStates = useCallback((v) => { _setButtonTextStates(v); useUIStore.getState().setBatch({ buttonTextStates: v }); }, []);
+  const [DexbuttonTextStates, _setDexButtonTextStates] = useState({});
+  const setDexButtonTextStates = useCallback((v) => { _setDexButtonTextStates(v); useUIStore.getState().setBatch({ dexButtonTextStates: v }); }, []);
+  const [swappingStates, _setSwappingStates] = useState({});
+  const setSwappingStates = useCallback((v) => { _setSwappingStates(v); useUIStore.getState().setBatch({ swappingStates: v }); }, []);
+  const [DexswappingStates, _setDexSwappingStates] = useState({});
+  const setDexSwappingStates = useCallback((v) => { _setDexSwappingStates(v); useUIStore.getState().setBatch({ dexSwappingStates: v, DexswappingStates: v }); }, []);
 
-  // Add new state variables for token value calculations
-  const [pstateToPlsRatio, setPstateToPlsRatio] = useState("0.0");
+  // --- User Store backed state ---
+  const [userHashSwapped, _setUserHashSwapped] = useState({});
+  const setUserHashSwapped = useCallback((v) => { _setUserHashSwapped(v); useUserStore.getState().setBatch({ userHashSwapped: v, userHasSwapped: v }); }, []);
+  const [userHasBurned, _setUserHasBurned] = useState({});
+  const setUserHasBurned = useCallback((v) => { _setUserHasBurned(v); useUserStore.getState().setBatch({ userHasBurned: v }); }, []);
+  const [userReverseStep1, _setUserReverseStep1] = useState({});
+  const setUserReverseStep1 = useCallback((v) => { _setUserReverseStep1(v); useUserStore.getState().setBatch({ userReverseStep1: v }); }, []);
+  const [userReverseStep2, _setUserReverseStep2] = useState({});
+  const setUserReverseStep2 = useCallback((v) => { _setUserReverseStep2(v); useUserStore.getState().setBatch({ userReverseStep2: v }); }, []);
+  const [DavAddress, _setDavAddress] = useState("");
+  const setDavAddress = useCallback((v) => { _setDavAddress(v); useUserStore.getState().setBatch({ davAddress: v, DavAddress: v }); }, []);
+  const [supportedToken, _setIsSupported] = useState(false);
+  const setIsSupported = useCallback((v) => { _setIsSupported(v); useTokenStore.getState().setBatch({ supportedToken: v }); }, []);
+  const [UsersSupportedTokens, _setUsersSupportedTokens] = useState("");
+  const setUsersSupportedTokens = useCallback((v) => { _setUsersSupportedTokens(v); useUserStore.getState().setBatch({ usersSupportedTokens: v, UsersSupportedTokens: v }); }, []);
+  const [StateAddress, _setStateAddress] = useState("");
+  const setStateAddress = useCallback((v) => { _setStateAddress(v); useUserStore.getState().setBatch({ stateAddress: v, StateAddress: v }); }, []);
+  const [AirdropClaimed, _setAirdropClaimed] = useState({});
+  const setAirdropClaimed = useCallback((v) => { _setAirdropClaimed(v); useUserStore.getState().setBatch({ airdropClaimed: v, AirdropClaimed: v, userHasAirdropClaimed: v }); }, []);
+  const [userHasReverseSwapped, _setUserHasReverseSwapped] = useState({});
+  const setUserHasReverseSwapped = useCallback((v) => { _setUserHasReverseSwapped(v); useUserStore.getState().setBatch({ userHasReverseSwapped: v }); }, []);
+
+  const [isCliamProcessing, _setIsCllaimProccessing] = useState(null);
+  const setIsCllaimProccessing = useCallback((v) => { _setIsCllaimProccessing(v); useUIStore.getState().setBatch({ isClaimProcessing: v, isCliamProcessing: v }); }, []);
+  const [reverseStateMap, _setReverseStateMap] = useState({});
+  const setReverseStateMap = useCallback((v) => { _setReverseStateMap(v); useUserStore.getState().setBatch({ reverseStateMap: v }); }, []);
+
+  const [pstateToPlsRatio, _setPstateToPlsRatio] = useState("0.0");
+  const setPstateToPlsRatio = useCallback((v) => { _setPstateToPlsRatio(v); useTokenStore.getState().setBatch({ pstateToPlsRatio: v }); }, []);
   // Warn once flags to avoid console spam
   const addressWarnedRef = useRef(false);
-  
+
   // State for dynamically detected auction timing
-  const [auctionDuration, setAuctionDuration] = useState(null);
-  const [auctionInterval, setAuctionInterval] = useState(null);
-  // Burned LP amounts for each token's pair (from burn address)
-  const [burnedLPAmount, setBurnLpAmount] = useState({});
-  // Force manual timer based on fixed PKT anchor and 2h/1h cycle
+  const [auctionDuration, _setAuctionDuration] = useState(null);
+  const setAuctionDuration = useCallback((v) => { _setAuctionDuration(v); useAuctionStore.getState().setBatch({ duration: v, auctionDuration: v }); }, []);
+  const [auctionInterval, _setAuctionInterval] = useState(null);
+  const setAuctionInterval = useCallback((v) => { _setAuctionInterval(v); useAuctionStore.getState().setBatch({ interval: v, auctionInterval: v }); }, []);
+  const [burnedLPAmount, _setBurnLpAmount] = useState({});
+  const setBurnLpAmount = useCallback((v) => { _setBurnLpAmount(v); useTokenStore.getState().setBatch({ burnedLPAmount: v, burnedLPAmounts: v }); }, []);
+  // Manual timer mode (project-driven schedule, no chain dependency)
   const USE_MANUAL_TIMER = true;
+  const MANUAL_DAV2_ANCHOR_UTC = 1771682400; // 2026-02-21 14:00:00 UTC (GMT+3 17:00)
+
+  const getManualTimerAnchor = useCallback(() => {
+    const runtimeDavId = String(getRuntimeConfigSync()?.selection?.davId || "DAV1").toUpperCase();
+    if (runtimeDavId === "DAV2") return MANUAL_DAV2_ANCHOR_UTC;
+    return undefined; // DAV1 and others use default anchor from auctionTiming utility
+  }, []);
   // Track previous auction phase to detect boundaries
   const prevPhaseRef = useRef(null);
   // Ref to call the same full data refresh used on wallet connect/disconnect
@@ -285,15 +368,15 @@ export const SwapContractProvider = ({ children }) => {
     try {
       const raw = localStorage.getItem(SWAP_CACHE_KEY);
       if (!raw) return false;
-      
+
       const cached = JSON.parse(raw);
-      
+
       // Check if cache is for same chain
       if (cached.chainId !== chainId) {
         console.log('🔄 Cache is for different chain, will fetch fresh data');
         return false;
       }
-      
+
       // Load cached values into state
       if (cached.TokenRatio && Object.keys(cached.TokenRatio).length > 0) {
         setTokenRatio(cached.TokenRatio);
@@ -339,7 +422,7 @@ export const SwapContractProvider = ({ children }) => {
       // These must always be fetched fresh from the chain to avoid showing
       // stale tick marks (e.g., showing all steps done when only Step 1 is done).
       // The live flag refresh in runStagedRefresh handles this.
-      
+
       console.log('📦 Loaded swap data from cache (age:', Math.round((Date.now() - cached.timestamp) / 1000), 's)');
       return true;
     } catch (e) {
@@ -379,7 +462,7 @@ export const SwapContractProvider = ({ children }) => {
     if (Object.keys(TokenRatio).length === 0 && Object.keys(tokenMap).length === 0) {
       return;
     }
-    
+
     // Debounce saves to prevent too many writes
     if (saveCacheTimeoutRef.current) {
       clearTimeout(saveCacheTimeoutRef.current);
@@ -387,7 +470,7 @@ export const SwapContractProvider = ({ children }) => {
     saveCacheTimeoutRef.current = setTimeout(() => {
       saveToCache();
     }, 2000); // Save 2 seconds after last change
-    
+
     return () => {
       if (saveCacheTimeoutRef.current) {
         clearTimeout(saveCacheTimeoutRef.current);
@@ -412,7 +495,7 @@ export const SwapContractProvider = ({ children }) => {
       if (!addr || !endAt) return;
       localStorage.setItem(`swap_active_end_${String(addr).toLowerCase()}`,
         String(Math.floor(Number(endAt))));
-    } catch {}
+    } catch { }
   }, [getSwapAddressSafe]);
 
   const loadPersistedActiveEndAt = useCallback(() => {
@@ -434,9 +517,9 @@ export const SwapContractProvider = ({ children }) => {
         setTotalCost(0n);
         return;
       }
-  // Always read TOKEN_COST (wei per DAV) from read-only provider when available
-  const davRead = (provider ? AllContracts.davContract.connect(provider) : AllContracts.davContract);
-  const tokenCostWei = await davRead.TOKEN_COST(); // BigInt wei
+      // Always read TOKEN_COST (wei per DAV) from read-only provider when available
+      const davRead = (provider ? AllContracts.davContract.connect(provider) : AllContracts.davContract);
+      const tokenCostWei = await davRead.TOKEN_COST(); // BigInt wei
       // Total = TOKEN_COST (wei) * amount (whole number)
       const qty = BigInt(String(amount || '0'));
       const totalWei = qty * BigInt(tokenCostWei);
@@ -483,7 +566,7 @@ export const SwapContractProvider = ({ children }) => {
 
       // Filter valid addresses and batch fetch names AND symbols
       const validAddresses = addresses.filter(addr => addr && addr !== ethers.ZeroAddress);
-      
+
       // Batch fetch all names and symbols in parallel
       const detailPromises = validAddresses.map(async (tokenAddress, idx) => {
         try {
@@ -501,7 +584,7 @@ export const SwapContractProvider = ({ children }) => {
           return { name: `Token${idx}`, symbol: "", address: tokenAddress };
         }
       });
-      
+
       const detailResults = await Promise.all(detailPromises);
       for (const { name, symbol, address } of detailResults) {
         // Key by name (ERC20 name) - this is the primary key
@@ -514,7 +597,7 @@ export const SwapContractProvider = ({ children }) => {
 
       // Cache the result
       tokenAddressCacheRef.current = { data: tokenMap, timestamp: Date.now() };
-      
+
       return tokenMap;
     } catch (error) {
       console.error("Error in ReturnfetchUserTokenAddresses:", error);
@@ -642,13 +725,13 @@ export const SwapContractProvider = ({ children }) => {
       if (entries.length === 0) return;
 
       const contract = AllContracts.AuctionContract;
-      
+
       // Build ALL flag calls for ALL tokens in one array
       const allCalls = [];
       for (const [tokenName, tokenAddress] of entries) {
         if (!tokenAddress) continue;
         const addrLc = tokenAddress.toLowerCase();
-        
+
         // Add all 6 flag types for this token
         allCalls.push({
           type: 'airdropClaimed',
@@ -704,7 +787,7 @@ export const SwapContractProvider = ({ children }) => {
 
       // Execute ALL calls in parallel (much faster than sequential)
       const results = await Promise.allSettled(allCalls.map(c => c.promise));
-      
+
       // Process results into state objects
       const airdropClaimedResults = {};
       const hasBurnedResults = {};
@@ -845,7 +928,7 @@ export const SwapContractProvider = ({ children }) => {
     } catch { return def; }
   };
 
-    useEffect(() => {
+  useEffect(() => {
     let countdownInterval;
     let resyncInterval;
     let isActive = true;
@@ -903,27 +986,23 @@ export const SwapContractProvider = ({ children }) => {
     };
 
     const fetchAuctionTimes = async (showLogs = true) => {
-      if (!AllContracts?.AuctionContract || !isActive) return;
+      if (!isActive) return;
 
       try {
         if (showLogs) {
           console.log("🔄 Fetching auction times...");
         }
-        // Manual mode: derive phase solely from fixed schedule using chain time
+        // Manual mode: derive phase solely from fixed schedule using local time
         if (USE_MANUAL_TIMER) {
           try {
-            // Anchor to chain time for accuracy
-            let chainNowSec = 0;
-            try {
-              const providerToUse = httpProvider;
-              const latestBlock = await providerToUse.getBlock('latest');
-              chainNowSec = Number(latestBlock?.timestamp || 0);
-            } catch {}
-            const localNowSec = Math.floor(Date.now() / 1000);
-            const effectiveNow = chainNowSec > 0 ? chainNowSec : localNowSec;
-            if (chainNowSec > 0) setChainTimeSkew(chainNowSec - localNowSec);
+            const effectiveNow = Math.floor(Date.now() / 1000);
+            setChainTimeSkew(0);
 
-            const manual = computeManualPhase(effectiveNow, { duration: 86400, interval: 0 });
+            const manual = computeManualPhase(effectiveNow, {
+              duration: 86400,
+              interval: 0,
+              anchorUtc: getManualTimerAnchor(),
+            });
             setAuctionPhase(manual.phase);
             setAuctionPhaseSeconds(manual.secondsLeft);
             setAuctionPhaseEndAt(manual.phaseEndAt);
@@ -964,7 +1043,7 @@ export const SwapContractProvider = ({ children }) => {
               try { isReverseFlag = await readOnlyAuction.isReverseAuctionActive(todayToken); } catch { isReverseFlag = false; }
             }
           }
-          
+
           // Update global reverse flag snapshot for consumers
           setReverseWindowActive(isReverseFlag === true ? true : (isAuctionActive ? false : null));
 
@@ -984,14 +1063,14 @@ export const SwapContractProvider = ({ children }) => {
               const entries = Object.entries(tokenMap || {});
               const found = entries.find(([id, addr]) => (addr || '').toLowerCase() === addrKey);
               idKey = found ? found[0] : null;
-            } catch {}
+            } catch { }
 
             // Anchor end timestamp to on-chain time
             let chainNowSec = 0;
             try {
               const latestBlock = await currentProvider.getBlock('latest');
               chainNowSec = Number(latestBlock?.timestamp || 0);
-            } catch {}
+            } catch { }
             const localNowSec = Math.floor(Date.now() / 1000);
             const effectiveNow = chainNowSec > 0 ? chainNowSec : localNowSec;
             const phaseEndAt = effectiveNow + timeLeftNumber;
@@ -1016,7 +1095,7 @@ export const SwapContractProvider = ({ children }) => {
               // Record the active end so we can compute interval end precisely
               lastActiveEndAtRef.current = phaseEndAt;
               // Persist across reloads for precise interval countdowns
-              try { persistActiveEndAt(phaseEndAt); } catch {}
+              try { persistActiveEndAt(phaseEndAt); } catch { }
               if (showLogs) console.log(`✅ Auction active for ${tokenName}: ${timeLeftNumber}s left`);
             } else {
               // Interval until next window starts — if contract returns 0 for this token,
@@ -1028,7 +1107,7 @@ export const SwapContractProvider = ({ children }) => {
                 if (loaded && (!lastActiveEndAtRef.current || lastActiveEndAtRef.current <= 0)) {
                   lastActiveEndAtRef.current = loaded;
                 }
-              } catch {}
+              } catch { }
               // Preferred: if contract exposes getSlotInfo(), use it for precise interval countdown
               try {
                 const c = AllContracts.AuctionContract;
@@ -1082,7 +1161,7 @@ export const SwapContractProvider = ({ children }) => {
                       lastEnd = Number(persisted);
                       lastActiveEndAtRef.current = lastEnd;
                     }
-                  } catch {}
+                  } catch { }
                 }
                 if (lastEnd > 0 && durationInterval > 0) {
                   computedEnd = lastEnd + durationInterval;
@@ -1141,10 +1220,14 @@ export const SwapContractProvider = ({ children }) => {
       countdownInterval = setInterval(() => {
         if (!isActive) return;
 
-        // In manual mode, continuously update phase and phase end at second-level from local clock + chain skew
+        // In manual mode, continuously update phase and phase end at second-level from local clock
         if (USE_MANUAL_TIMER) {
-          const nowSecManual = Math.floor(Date.now() / 1000) + (chainSkewRef.current || 0);
-          const manual = computeManualPhase(nowSecManual, { duration: 86400, interval: 0 });
+          const nowSecManual = Math.floor(Date.now() / 1000);
+          const manual = computeManualPhase(nowSecManual, {
+            duration: 86400,
+            interval: 0,
+            anchorUtc: getManualTimerAnchor(),
+          });
           const prevPhase = prevPhaseRef.current;
           setAuctionPhase((old) => (old !== manual.phase ? manual.phase : old));
           setAuctionPhaseEndAt((old) => (old !== manual.phaseEndAt ? manual.phaseEndAt : old));
@@ -1157,15 +1240,15 @@ export const SwapContractProvider = ({ children }) => {
               if (!last || (nowTs - last) > 30) {
                 sessionStorage.setItem('auction_boundary_reload_at', String(nowTs));
                 // 1) Immediately run the same synchronized refresh used on wallet connect/disconnect
-                try { runSyncRef.current && runSyncRef.current(); } catch {}
+                try { runSyncRef.current && runSyncRef.current(); } catch { }
                 // 2) Fire a custom event for any listeners that want to react
-                try { window.dispatchEvent(new Event('forceSynchronizedRefresh')); } catch {}
+                try { window.dispatchEvent(new Event('forceSynchronizedRefresh')); } catch { }
                 // 3) As a backup (in case chain flips slightly after the boundary), run again after 2s
-                try { setTimeout(() => { runSyncRef.current && runSyncRef.current(); }, 2000); } catch {}
+                try { setTimeout(() => { runSyncRef.current && runSyncRef.current(); }, 2000); } catch { }
                 // 4) Optional hard reload after a short delay if needed to guarantee full reset
-                try { setTimeout(() => { window.location.reload(); }, 2500); } catch {}
+                try { setTimeout(() => { window.location.reload(); }, 2500); } catch { }
               }
-            } catch {}
+            } catch { }
           }
           // Update previous phase snapshot
           prevPhaseRef.current = manual.phase;
@@ -1193,7 +1276,7 @@ export const SwapContractProvider = ({ children }) => {
             // Log when auctions are about to end (use dynamic duration)
             const fiveMinutes = 300;
             const oneMinute = 60;
-            
+
             if (newTime === fiveMinutes && oldTime !== fiveMinutes) {
               const duration = auctionDuration || fiveMinutes;
               const minutesLeft = Math.floor(newTime / 60);
@@ -1207,7 +1290,7 @@ export const SwapContractProvider = ({ children }) => {
               // Trigger immediate fresh fetch on window rollover
               if (isActive) {
                 fetchAuctionTimes(false);
-                try { CheckIsAuctionActive(); CheckIsReverse(); getTokenRatio(); } catch {}
+                try { CheckIsAuctionActive(); CheckIsReverse(); getTokenRatio(); } catch { }
               }
             }
           }
@@ -1282,11 +1365,11 @@ export const SwapContractProvider = ({ children }) => {
 
     // Initialize
     console.log("🚀 Initializing auction timer...");
-    
+
     // Detect and cache auction timing from blockchain
     const detectAndCacheTiming = async () => {
       if (!AllContracts?.AuctionContract) return;
-      
+
       try {
         const timing = await getAuctionTiming(AllContracts.AuctionContract);
         setAuctionDuration(timing.duration);
@@ -1296,19 +1379,19 @@ export const SwapContractProvider = ({ children }) => {
         console.error('Error detecting auction timing:', error);
       }
     };
-    
+
     // Detect timing on initialization
     detectAndCacheTiming();
 
     // Setup WebSocket connection (non-blocking)
-  const detachWs = setupWebSocketListeners();
+    const detachWs = setupWebSocketListeners();
 
-  // Keep refs in sync
-  auctionEndAtRef.current = AuctionEndAt;
-  phaseEndAtRef.current = auctionPhaseEndAt;
-  chainSkewRef.current = chainTimeSkew;
+    // Keep refs in sync
+    auctionEndAtRef.current = AuctionEndAt;
+    phaseEndAtRef.current = auctionPhaseEndAt;
+    chainSkewRef.current = chainTimeSkew;
 
-  // Start countdown immediately
+    // Start countdown immediately
     startCountdown();
 
     // Set initial loading state
@@ -1335,7 +1418,7 @@ export const SwapContractProvider = ({ children }) => {
       }
     };
 
-  initializeFetch();
+    initializeFetch();
 
     // Setup periodic resync
     setupResyncInterval();
@@ -1368,7 +1451,7 @@ export const SwapContractProvider = ({ children }) => {
       }
 
       // Detach block listener if attached
-      try { detachWs && detachWs(); } catch {}
+      try { detachWs && detachWs(); } catch { }
     };
     // Keep refs updated when state changes
   }, [AllContracts]);
@@ -1520,15 +1603,15 @@ export const SwapContractProvider = ({ children }) => {
       const results = {};
       const auctionAddr = getAuctionAddress();
       const stateAddr = getStateAddress();
-      
+
       // Validate auction address exists
       if (!auctionAddr || auctionAddr === ethers.ZeroAddress) {
         console.warn("getTokenBalances: Invalid auction address");
         return;
       }
-      
+
       const tokenMap = await ReturnfetchUserTokenAddresses();
-      
+
       // Add STATE token with both lowercase and uppercase keys for consistency
       const extendedMap = {
         ...tokenMap,
@@ -1539,7 +1622,7 @@ export const SwapContractProvider = ({ children }) => {
       for (const [tokenName, TokenAddress] of Object.entries(extendedMap)) {
         try {
           if (!TokenAddress || TokenAddress === ethers.ZeroAddress) continue;
-          
+
           const tokenContract = getCachedContract(
             TokenAddress,
             'ERC20_APPROVAL',
@@ -1601,34 +1684,34 @@ export const SwapContractProvider = ({ children }) => {
   const diagnosticAuctionStatus = async () => {
     try {
       console.log('=== AUCTION DIAGNOSTIC ===');
-      
+
       // Get today's token
-  const todayAddr = await getTodayTokenAddress(AllContracts.AuctionContract);
+      const todayAddr = await getTodayTokenAddress(AllContracts.AuctionContract);
       console.log('Today\'s Token Address:', todayAddr);
-      
+
       if (!todayAddr || todayAddr === ethers.ZeroAddress) {
         console.log('❌ No active token');
         return;
       }
-      
+
       // Check auction active
       const isActive = await AllContracts.AuctionContract.isAuctionActive(todayAddr);
       console.log('Is Auction Active:', isActive);
-      
+
       // Check reverse active
       const isReverse = await AllContracts.AuctionContract.isReverseAuctionActive(todayAddr);
       console.log('Is Reverse Auction:', isReverse);
-      
+
       // Get time left
       const timeLeft = await AllContracts.AuctionContract.getAuctionTimeLeft(todayAddr);
       console.log('Time Left (seconds):', timeLeft.toString());
-      
+
       // Get current cycle count
       const cycle = await AllContracts.AuctionContract.getCurrentAuctionCycle(todayAddr);
       console.log('Current Cycle Count:', cycle.toString());
-      
+
       console.log('=== END DIAGNOSTIC ===');
-      
+
       return {
         todayAddress: todayAddr,
         isActive,
@@ -1641,7 +1724,7 @@ export const SwapContractProvider = ({ children }) => {
       throw e;
     }
   };
-  
+
   // Expose to window for easy console access
   if (typeof window !== 'undefined') {
     window.auctionDiagnostic = diagnosticAuctionStatus;
@@ -1660,17 +1743,17 @@ export const SwapContractProvider = ({ children }) => {
         throw e;
       }
     };
-  // tokenAddr optional; if omitted, tries today's token. Contract ignores the amount and burns exactly your Reverse Step 1 STATE.
+    // tokenAddr optional; if omitted, tries today's token. Contract ignores the amount and burns exactly your Reverse Step 1 STATE.
     window.callReverseStep2Direct = async (tokenAddr, _amountWeiIgnored) => {
       try {
         if (!AllContracts?.AuctionContract || !signer) throw new Error('Contract or wallet not ready');
         const c = AllContracts.AuctionContract.connect(signer);
         let t = tokenAddr;
         if (!t) {
-          try { t = await getTodayTokenAddress(AllContracts.AuctionContract); } catch {}
+          try { t = await getTodayTokenAddress(AllContracts.AuctionContract); } catch { }
         }
         if (!t || t === ethers.ZeroAddress) throw new Error('No token resolved for reverse step 2');
-  // Contract ignores the parameter and burns exactly the STATE you received in Reverse Step 1
+        // Contract ignores the parameter and burns exactly the STATE you received in Reverse Step 1
         const tx = await c.getFunction('burnStateForTokens(uint256)')(0n);
         console.log('[Direct] burnStateForTokens sent:', tx.hash);
         const rc = await tx.wait();
@@ -1691,7 +1774,7 @@ export const SwapContractProvider = ({ children }) => {
         }
         const names = c.interface.fragments
           .filter(f => f?.type === 'function')
-          .map(f => `${f.name}(${(f.inputs||[]).map(i=>i.type).join(',')})`);
+          .map(f => `${f.name}(${(f.inputs || []).map(i => i.type).join(',')})`);
         console.log('[ABI] Functions:', names);
         return names;
       } catch (e) {
@@ -1755,7 +1838,7 @@ export const SwapContractProvider = ({ children }) => {
       const renouncedPromises = tokenEntries.map(async ([tokenName, TokenAddress]) => {
         let renouncing = false;
         let tokenSymbol = "";
-        
+
         try {
           if (tokenName === "STATE") {
             const owner = await AllContracts.stateContract.owner();
@@ -1788,7 +1871,7 @@ export const SwapContractProvider = ({ children }) => {
       });
 
       const renouncedResults = await Promise.all(renouncedPromises);
-      
+
       // Build results with multiple keys for robust lookups
       for (const { tokenName, tokenSymbol, TokenAddress, renouncing } of renouncedResults) {
         results[tokenName] = renouncing;
@@ -1881,19 +1964,19 @@ export const SwapContractProvider = ({ children }) => {
       let stateAddress = null;
 
       // Try resolving via Auction contract first
-      try { davAddress = await AllContracts.AuctionContract.dav(); } catch {}
-      try { stateAddress = await AllContracts.AuctionContract.stateToken(); } catch {}
+      try { davAddress = await AllContracts.AuctionContract.dav(); } catch { }
+      try { stateAddress = await AllContracts.AuctionContract.stateToken(); } catch { }
 
       // Fallbacks from initialized contract targets if above calls fail or decode
       if (!davAddress || !ethers.isAddress(davAddress)) {
         try {
           davAddress = AllContracts?._davAddress || AllContracts?.davContract?.target || getDavAddress();
-        } catch {}
+        } catch { }
       }
       if (!stateAddress || !ethers.isAddress(stateAddress)) {
         try {
           stateAddress = AllContracts?._stateAddress || AllContracts?.stateContract?.target || getStateAddress();
-        } catch {}
+        } catch { }
       }
 
       if ((!davAddress || !ethers.isAddress(davAddress) || !stateAddress || !ethers.isAddress(stateAddress)) && !addressWarnedRef.current) {
@@ -1913,7 +1996,7 @@ export const SwapContractProvider = ({ children }) => {
         const stateFallback = AllContracts?._stateAddress || AllContracts?.stateContract?.target || getStateAddress();
         if (davFallback && ethers.isAddress(davFallback)) setDavAddress(davFallback);
         if (stateFallback && ethers.isAddress(stateFallback)) setStateAddress(stateFallback);
-      } catch {}
+      } catch { }
     }
   };
 
@@ -1944,7 +2027,7 @@ export const SwapContractProvider = ({ children }) => {
 
       if (todayAddr && todayAddr !== ethers.ZeroAddress) {
         setTodayTokenAddress(todayAddr);
-        
+
         // Use contract runner if available, otherwise fallback to provider
         const readProvider = AllContracts.AuctionContract.runner || provider || httpProvider;
         const erc20 = getCachedContract(
@@ -1952,13 +2035,13 @@ export const SwapContractProvider = ({ children }) => {
           'TOKEN_META',
           readProvider
         );
-        
+
         const [name, symbol, decimals] = await Promise.all([
           erc20.name().catch(() => ""),
           erc20.symbol().catch(() => ""),
           erc20.decimals().catch(() => 18),
         ]);
-        
+
         setTodayTokenName(name);
         setTodayTokenSymbol(symbol);
         setTodayTokenDecimals(Number(decimals) || 18);
@@ -2031,7 +2114,7 @@ export const SwapContractProvider = ({ children }) => {
               continue;
             }
           }
-        } catch {}
+        } catch { }
 
         // 3) Fallback: getPairAddress non-zero implies registered
         try {
@@ -2041,7 +2124,7 @@ export const SwapContractProvider = ({ children }) => {
             results[tokenName] = true;
             continue;
           }
-        } catch {}
+        } catch { }
 
         // 4) Last resort: try a harmless view that only exists for supported tokens
         // If it succeeds without "UnsupportedToken" revert, treat as supported
@@ -2074,19 +2157,19 @@ export const SwapContractProvider = ({ children }) => {
       // Fetch token count from the contract
       const tokenCount = await AllContracts.AuctionContract.tokenCount().catch(() => 0);
       const totalTokens = Number(tokenCount);
-      
+
       if (totalTokens === 0) {
         setUsersSupportedTokens([]);
         return;
       }
 
       const tokenData = [];
-      
+
       // Fetch all registered tokens from autoRegisteredTokens array
       for (let i = 0; i < totalTokens; i++) {
         try {
           const tokenAddr = await AllContracts.AuctionContract.autoRegisteredTokens(i);
-          
+
           // Skip zero addresses
           if (!tokenAddr || tokenAddr === ethers.ZeroAddress) {
             continue;
@@ -2097,7 +2180,7 @@ export const SwapContractProvider = ({ children }) => {
             'ERC20_NAME',
             provider
           );
-          
+
           const name = await tokenContract.name().catch(() => `Token ${i + 1}`);
           const pairAddress = await AllContracts.AuctionContract.getPairAddress(tokenAddr).catch(() => ethers.ZeroAddress);
           const nextClaimTime = await AllContracts.AuctionContract.getAuctionTimeLeft(tokenAddr).catch(() => 0);
@@ -2153,7 +2236,7 @@ export const SwapContractProvider = ({ children }) => {
 
           // Check if it's a contract
           let pairCode = "0x";
-          try { pairCode = await (httpProvider || provider).getCode(pairAddress); } catch {}
+          try { pairCode = await (httpProvider || provider).getCode(pairAddress); } catch { }
           if (!pairCode || pairCode === "0x") {
             return { tokenName, tokenAddress, pairAddress, balance: 0, symbol: "" };
           }
@@ -2197,7 +2280,7 @@ export const SwapContractProvider = ({ children }) => {
           if (AllContracts?.buyBurnController && typeof AllContracts.buyBurnController.stateWplsPool === 'function') {
             statePairAddress = await AllContracts.buyBurnController.stateWplsPool();
           }
-        } catch {}
+        } catch { }
         if (!statePairAddress || statePairAddress === ethers.ZeroAddress) {
           // Fallback to AuctionContract mapping
           const stateAddr = getSTATEContractAddress(chainId);
@@ -2213,7 +2296,7 @@ export const SwapContractProvider = ({ children }) => {
         } else {
           // Guard: ensure STATE pair address has code
           let code = "0x";
-          try { code = await (httpProvider || provider).getCode(statePairAddress); } catch {}
+          try { code = await (httpProvider || provider).getCode(statePairAddress); } catch { }
           if (!code || code === "0x") {
             const entry = { pairAddress: statePairAddress, balance: 0 };
             results["STATE"] = entry;
@@ -2251,10 +2334,10 @@ export const SwapContractProvider = ({ children }) => {
   // Ensure LP burned amounts are fetched on init and when environment changes
   useEffect(() => {
     if (!AllContracts?.AuctionContract || !provider) return;
-    
+
     // Smart polling for burn LP amounts: 30s active, 120s idle
     const poller = createSmartPoller(() => {
-      try { fetchBurnLpAmount(); } catch {}
+      try { fetchBurnLpAmount(); } catch { }
     }, {
       activeInterval: 30000,   // 30s when user is active
       idleInterval: 120000,    // 2 minutes when idle (this data changes slowly)
@@ -2262,7 +2345,7 @@ export const SwapContractProvider = ({ children }) => {
       fetchOnVisible: true,    // Refresh when tab becomes visible
       name: 'burn-lp-amounts'
     });
-    
+
     poller.start();
     return () => poller.stop();
   }, [AllContracts?.AuctionContract, provider, address, chainId]);
@@ -2446,25 +2529,25 @@ export const SwapContractProvider = ({ children }) => {
 
         return;
       }
-      
+
       try {
         console.log('📊 Stage 1: Loading critical data...');
         // Stage 1: Critical data (needed for basic display)
         await Promise.allSettled(criticalFetchFunctions.map(fn => fn()));
-        
+
         // Small delay before secondary data
         await new Promise(resolve => setTimeout(resolve, 500));
-        
+
         console.log('📊 Stage 2: Loading secondary data...');
         // Stage 2: Secondary data
         await Promise.allSettled([
           ...secondaryFetchFunctions,
           ...auctionStatusFunctions,
         ].map(fn => fn()));
-        
+
         // Longer delay before tertiary data to let browser breathe
         await new Promise(resolve => setTimeout(resolve, 1000));
-        
+
         console.log('📊 Stage 3: Loading tertiary data...');
         // Stage 3: Tertiary data - load in smaller batches
         const batchSize = 5;
@@ -2476,7 +2559,7 @@ export const SwapContractProvider = ({ children }) => {
             await new Promise(resolve => setTimeout(resolve, 300));
           }
         }
-        
+
         console.log('✅ All data loaded and cached');
       } catch (error) {
         console.error('Staged refresh error:', error);
@@ -2489,7 +2572,7 @@ export const SwapContractProvider = ({ children }) => {
     // Expose the refresh function via ref and optional window event
     runSyncRef.current = runForceRefresh;
     const handleForceRefresh = () => runForceRefresh();
-    try { window.addEventListener('forceSynchronizedRefresh', handleForceRefresh); } catch {}
+    try { window.addEventListener('forceSynchronizedRefresh', handleForceRefresh); } catch { }
 
     // Initial refresh - will use cache if valid
     runStagedRefresh(didReconnect); // Force refresh on wallet reconnect
@@ -2505,7 +2588,7 @@ export const SwapContractProvider = ({ children }) => {
       fetchOnVisible: true,    // Refresh when tab becomes visible
       name: 'unified-polling'
     });
-    
+
     unifiedPoller.start();
 
     // Listen for account changes in MetaMask
@@ -2530,7 +2613,7 @@ export const SwapContractProvider = ({ children }) => {
       if (window.ethereum) {
         window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
       }
-      try { window.removeEventListener('forceSynchronizedRefresh', handleForceRefresh); } catch {}
+      try { window.removeEventListener('forceSynchronizedRefresh', handleForceRefresh); } catch { }
       runSyncRef.current = null;
     };
   }, [AllContracts, address, loading, isCacheValid, TokenRatio]);
@@ -2606,13 +2689,13 @@ export const SwapContractProvider = ({ children }) => {
               if (todayAddr && todayAddr !== ethers.ZeroAddress) {
                 tokenAddress = todayAddr;
               }
-            } catch {}
+            } catch { }
             // 4) As a last resort, pick the first discovered token
             if (!tokenAddress && latestMap && Object.values(latestMap).length > 0) {
               tokenAddress = Object.values(latestMap)[0];
             }
           }
-        } catch {}
+        } catch { }
       }
       if (!tokenAddress) {
         notifyError("No token selected and token-of-day unavailable. Please wait for tokens to load or select a token.");
@@ -2656,7 +2739,7 @@ export const SwapContractProvider = ({ children }) => {
       try {
         const availableDav = await AllContracts.AuctionContract.getAvailableDavForAuction(address, tokenAddress);
         if (BigInt(availableDav) < ethers.parseEther("1")) {
-          notifyError("Not enough DAV (need at least 1 DAV unit)." );
+          notifyError("Not enough DAV (need at least 1 DAV unit).");
           setSwappingStates((p) => ({ ...p, [id]: false }));
           return;
         }
@@ -2702,7 +2785,7 @@ export const SwapContractProvider = ({ children }) => {
         const receipt = await burnTx.wait();
 
         if (receipt.status === 1) {
-  notifySuccess(`Ratio swap completed`);
+          notifySuccess(`Ratio swap completed`);
           setTxStatusForSwap("confirmed");
           // Optimistically set the address-keyed flag to true for instant UI feedback
           try {
@@ -2710,7 +2793,7 @@ export const SwapContractProvider = ({ children }) => {
             if (addr) {
               setUserHasBurned((prev) => ({ ...prev, [addr]: true }));
             }
-          } catch {}
+          } catch { }
           // Trigger safe background refresh (debounced, mount-safe)
           triggerBackgroundRefresh();
         } else {
@@ -2784,12 +2867,12 @@ export const SwapContractProvider = ({ children }) => {
             try {
               const todayAddr = await getTodayTokenAddress(AllContracts.AuctionContract);
               if (todayAddr && todayAddr !== ethers.ZeroAddress) tokenAddress = todayAddr;
-            } catch {}
+            } catch { }
             if (!tokenAddress && latestMap && Object.values(latestMap).length > 0) {
               tokenAddress = Object.values(latestMap)[0];
             }
           }
-        } catch {}
+        } catch { }
       }
       if (!tokenAddress) {
         notifyError("No token selected and token-of-day unavailable. Please wait for tokens to load or select a token.");
@@ -2798,7 +2881,7 @@ export const SwapContractProvider = ({ children }) => {
       }
 
       // Must be reverse window
-  const isRev = await AuctionWithSigner.isReverseAuctionActive(tokenAddress).catch(() => false);
+      const isRev = await AuctionWithSigner.isReverseAuctionActive(tokenAddress).catch(() => false);
       if (!isRev) {
         notifyError("Normal auction window active. Reverse swap is only available in reverse windows.");
         setSwappingStates((p) => ({ ...p, [id]: false }));
@@ -2807,29 +2890,29 @@ export const SwapContractProvider = ({ children }) => {
 
       // Preflight checks to avoid on-chain custom error reverts
       try {
-  const supported = await AuctionWithSigner.isTokenSupported(tokenAddress);
+        const supported = await AuctionWithSigner.isTokenSupported(tokenAddress);
         if (!supported) {
           notifyError("This token is not supported in the auction.");
           setSwappingStates((p) => ({ ...p, [id]: false }));
           return;
         }
-      } catch {}
+      } catch { }
       try {
-  const can = await AuctionWithSigner.canParticipateInAuction(address, tokenAddress);
+        const can = await AuctionWithSigner.canParticipateInAuction(address, tokenAddress);
         if (!can) {
           notifyError("Not enough DAV (need >= 1 DAV unit).");
           setSwappingStates((p) => ({ ...p, [id]: false }));
           return;
         }
-      } catch {}
+      } catch { }
       try {
-  const already = await AuctionWithSigner.hasUserCompletedReverseStep1(address, tokenAddress);
+        const already = await AuctionWithSigner.hasUserCompletedReverseStep1(address, tokenAddress);
         if (already) {
           notifyError("You already completed Reverse Step 1 for this cycle.");
           setSwappingStates((p) => ({ ...p, [id]: false }));
           return;
         }
-      } catch {}
+      } catch { }
 
       // Note: Some deployments may require normal Step 2 completion before reverse Step 1.
       // Do NOT block here. We'll rely on simulation to surface a precise custom error (Step2NotCompleted) when applicable.
@@ -2845,8 +2928,8 @@ export const SwapContractProvider = ({ children }) => {
       // Use user's allowed amount based on last 3 normal-auction cycles (contract will auto-cap as well)
       const tokenCtr = getCachedContract(tokenAddress, 'ERC20_APPROVAL', signer);
       let decimals = 18;
-      try { decimals = Number(await tokenCtr.decimals()); } catch {}
-      
+      try { decimals = Number(await tokenCtr.decimals()); } catch { }
+
       // Get user's actual token balance
       const bal = await tokenCtr.balanceOf(address);
       if (!bal || BigInt(bal) === 0n) {
@@ -2864,10 +2947,10 @@ export const SwapContractProvider = ({ children }) => {
             try {
               const net = await AuctionWithSigner.calculateNetTokensFromNormalAuction(address, tokenAddress, cycleNum - i);
               maxAllowed += BigInt(net || 0);
-            } catch {}
+            } catch { }
           }
         }
-      } catch {}
+      } catch { }
       // Amount to attempt
       let unitToBurn = BigInt(bal);
       if (maxAllowed > 0n) {
@@ -2917,7 +3000,7 @@ export const SwapContractProvider = ({ children }) => {
           setSwappingStates((p) => ({ ...p, [id]: false }));
           return;
         }
-      } catch {}
+      } catch { }
 
       // Execute reverse step 1 - contract auto-detects today's token, only needs amount
       setButtonTextStates((prev) => ({ ...prev, [id]: "Swapping for STATE..." }));
@@ -2930,24 +3013,24 @@ export const SwapContractProvider = ({ children }) => {
         AuctionWithSigner.interface.getFunction('reverseSwapTokensForState(uint256)');
         const fn = AuctionWithSigner.getFunction('reverseSwapTokensForState(uint256)');
         // Simulate first to surface precise errors and avoid wallet popup on revert
-  await fn.staticCall(unitToBurn);
+        await fn.staticCall(unitToBurn);
         console.log('✅ Reverse Step 1 simulation passed with: reverseSwapTokensForState(uint256)');
         selected = { key: 'reverseSwapTokensForState(uint256)', args: [unitToBurn] };
       } catch (simErr) {
         console.error("❌ Reverse Step 1 simulation failed:", simErr);
         console.error("Full error object:", JSON.stringify(simErr, null, 2));
-        
+
         // Enhanced error decoding with multiple fallback strategies
         let errName = simErr?.errorName || simErr?.data?.errorName || simErr?.error?.errorName || simErr?.info?.error?.data?.errorName;
-        let errorData = simErr?.data 
-          || simErr?.error?.data?.data 
-          || simErr?.error?.data 
+        let errorData = simErr?.data
+          || simErr?.error?.data?.data
+          || simErr?.error?.data
           || simErr?.info?.error?.data?.data
           || (typeof simErr?.info?.error?.data === 'string' ? simErr.info.error.data : null);
-        
+
         console.log('Extracted errorData:', errorData);
         console.log('Initial errName:', errName);
-        
+
         // Try multiple parsing strategies
         if (!errName && errorData && typeof errorData === 'string' && errorData.startsWith('0x')) {
           try {
@@ -2959,12 +3042,12 @@ export const SwapContractProvider = ({ children }) => {
           } catch (parseErr) {
             console.warn('Failed to parse error with interface:', parseErr);
           }
-          
+
           // Try to identify error by signature (first 4 bytes)
           if (!errName && errorData.length >= 10) {
             const selector = errorData.slice(0, 10);
             console.log('Error selector:', selector);
-            
+
             // Map common error selectors
             const errorMap = {
               '0x82b42900': 'Unauthorized',
@@ -2991,20 +3074,20 @@ export const SwapContractProvider = ({ children }) => {
               '0x6f312cbd': 'Step2NotCompleted',
               '0xfe6651de': 'MustClaimAllDavAirdrops',
             };
-            
+
             if (errorMap[selector]) {
               errName = errorMap[selector];
               console.log('✅ Identified error by selector:', errName);
             }
           }
         }
-        
+
         let simMsg = simErr?.reason || simErr?.shortMessage || simErr?.message || simErr?.toString() || "Reverse swap simulation failed";
         if ((simErr?.shortMessage || simErr?.message)?.toLowerCase?.().includes('missing revert data')) {
           simMsg = "No history of normal auction participation during the last 3 cycles.";
         }
-        
-  // Decode known custom errors
+
+        // Decode known custom errors
         if (errName === 'UnsupportedToken') simMsg = "This token is not supported in the auction.";
         else if (errName === 'StateNotSet') simMsg = "STATE token is not configured yet.";
         else if (errName === 'NotStarted') simMsg = "Reverse window not active yet.";
@@ -3015,7 +3098,7 @@ export const SwapContractProvider = ({ children }) => {
         else if (errName === 'InsufficientAllowance') simMsg = "Token allowance is insufficient.";
         else if (errName === 'InsufficientVault') simMsg = "Vault has insufficient STATE for this swap.";
         else if (errName === 'ReverseDayLPOonly') simMsg = "Reverse day LP-only restriction active; action unavailable.";
-  else if (errName === 'NoNormalAuctionParticipation') simMsg = "You must have participated in at least one of the last 3 normal auctions for this token.";
+        else if (errName === 'NoNormalAuctionParticipation') simMsg = "You must have participated in at least one of the last 3 normal auctions for this token.";
         else if (errName === 'ParticipantCapReached') simMsg = "Participant cap reached for auctions.";
         else if (errName === 'ScheduleNotSet') simMsg = "Auction schedule is not set.";
         else if (errName === 'Ended') simMsg = "Auction period has ended.";
@@ -3026,22 +3109,22 @@ export const SwapContractProvider = ({ children }) => {
         else if (errName === 'PausedErr') simMsg = "Contract is paused.";
         else if (errName === 'Unauthorized') simMsg = "Unauthorized action.";
         else if (errName === 'ZeroAddr') simMsg = "Invalid zero address.";
-        
+
         console.log('Final message:', simMsg);
-        
+
         // If still generic, provide detailed diagnostics
         if (simMsg.includes('unknown custom error') || simMsg.includes('execution reverted')) {
           const selector = errorData?.length >= 10 ? errorData.slice(0, 10) : 'none';
           simMsg = `Reverse swap blocked. Error: ${errName || 'Unknown'}. Selector: ${selector}. Check console (F12) for full details.`;
         }
-        
+
         // Optional force-send override via URL (?forceSend=1 or ?forceTx=1)
         let forceSend = false;
         try {
           const qs = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
           const fs = (qs?.get('forceSend') || qs?.get('forceTx') || '').toLowerCase();
           forceSend = fs === '1' || fs === 'true';
-        } catch {}
+        } catch { }
 
         if (!forceSend) {
           notifyError(simMsg);
@@ -3065,12 +3148,12 @@ export const SwapContractProvider = ({ children }) => {
           try {
             const addrLc = (tokenAddress || '').toLowerCase();
             if (addrLc) setUserReverseStep1((prev) => ({ ...prev, [addrLc]: true, [tokenAddress]: true }));
-          } catch {}
+          } catch { }
           try {
             const amount = await AuctionWithSigner.getReverseStateBalance(address, tokenAddress).catch(() => 0n);
             setReverseStateMap((prev) => ({ ...prev, [tokenAddress]: Number(ethers.formatUnits(amount || 0n, 18)) }));
             await HasUserCompletedReverseStep1();
-          } catch {}
+          } catch { }
           setSwappingStates((p) => ({ ...p, [id]: false }));
           setTxStatusForSwap('success');
           return;
@@ -3083,8 +3166,8 @@ export const SwapContractProvider = ({ children }) => {
           return;
         }
       }
-  // If simulation passes, send tx using the exact selected signature (MetaMask should prompt now)
-  const tx = await AuctionWithSigner.getFunction(selected.key)(...selected.args);
+      // If simulation passes, send tx using the exact selected signature (MetaMask should prompt now)
+      const tx = await AuctionWithSigner.getFunction(selected.key)(...selected.args);
       const receipt = await tx.wait();
       if (receipt.status === 1) {
         notifySuccess("Reverse swap completed (Step 1)");
@@ -3093,7 +3176,7 @@ export const SwapContractProvider = ({ children }) => {
         try {
           const addrLc = (tokenAddress || '').toLowerCase();
           if (addrLc) setUserReverseStep1((prev) => ({ ...prev, [addrLc]: true, [tokenAddress]: true }));
-        } catch {}
+        } catch { }
         // Safe background refresh (debounced, mount-aware)
         triggerBackgroundRefresh();
       } else {
@@ -3103,7 +3186,7 @@ export const SwapContractProvider = ({ children }) => {
     } catch (error) {
       console.error("Reverse swap error:", error);
       console.error("Full error object:", JSON.stringify(error, null, 2));
-      
+
       if (error?.code === 4001) {
         setTxStatusForSwap("cancelled");
         notifyError("Transaction cancelled by user.");
@@ -3111,7 +3194,7 @@ export const SwapContractProvider = ({ children }) => {
         // Enhanced error decoding with multiple fallback strategies
         let errName = error?.errorName || error?.data?.errorName || error?.error?.errorName;
         let errorData = error?.data || error?.error?.data?.data || error?.error?.data;
-        
+
         // Try multiple parsing strategies
         if (!errName && errorData && typeof errorData === 'string' && errorData.startsWith('0x')) {
           try {
@@ -3123,12 +3206,12 @@ export const SwapContractProvider = ({ children }) => {
           } catch (parseErr) {
             console.warn('Failed to parse error with interface:', parseErr);
           }
-          
+
           // Try to identify error by signature (first 4 bytes)
           if (!errName && errorData.length >= 10) {
             const selector = errorData.slice(0, 10);
             console.log('Error selector:', selector);
-            
+
             // Map common error selectors
             const errorMap = {
               '0x82b42900': 'Unauthorized',
@@ -3155,14 +3238,14 @@ export const SwapContractProvider = ({ children }) => {
               '0x6f312cbd': 'Step2NotCompleted',
               '0xfe6651de': 'MustClaimAllDavAirdrops',
             };
-            
+
             if (errorMap[selector]) {
               errName = errorMap[selector];
               console.log('✅ Identified error by selector:', errName);
             }
           }
         }
-        
+
         let msg = error?.reason || error?.shortMessage || error?.message || error?.toString() || "Reverse swap failed";
         if ((error?.shortMessage || error?.message)?.toLowerCase?.().includes('missing revert data')) {
           // Provide more actionable guidance instead of network-only hint
@@ -3190,13 +3273,13 @@ export const SwapContractProvider = ({ children }) => {
         else if (errName === 'Unauthorized') msg = "Unauthorized action.";
         else if (errName === 'ZeroAddr') msg = "Invalid zero address.";
         else if (/Normal auction active/i.test(msg)) msg = "Normal auction window active. Reverse swap only during reverse window.";
-        
+
         // If still generic, provide detailed diagnostics
         if (msg.includes('unknown custom error') || msg.includes('execution reverted')) {
           const selector = errorData?.length >= 10 ? errorData.slice(0, 10) : 'none';
           msg = `Reverse swap blocked. Error: ${errName || 'Unknown'}. Selector: ${selector}. Check console (F12) for full details.`;
         }
-        
+
         notifyError(msg);
         setTxStatusForSwap("error");
       }
@@ -3235,12 +3318,12 @@ export const SwapContractProvider = ({ children }) => {
             try {
               const todayAddr = await getTodayTokenAddress(AllContracts.AuctionContract);
               if (todayAddr && todayAddr !== ethers.ZeroAddress) tokenAddress = todayAddr;
-            } catch {}
+            } catch { }
             if (!tokenAddress && latestMap && Object.values(latestMap).length > 0) {
               tokenAddress = Object.values(latestMap)[0];
             }
           }
-        } catch {}
+        } catch { }
       }
       if (!tokenAddress) {
         notifyError("No token selected and token-of-day unavailable. Please wait for tokens to load or select a token.");
@@ -3249,7 +3332,7 @@ export const SwapContractProvider = ({ children }) => {
       }
 
       // Must be reverse window
-  const isRev = await AuctionWithSigner.isReverseAuctionActive(tokenAddress).catch(() => false);
+      const isRev = await AuctionWithSigner.isReverseAuctionActive(tokenAddress).catch(() => false);
       if (!isRev) {
         notifyError("Normal auction window active. Step 2 is only available in reverse windows.");
         setSwappingStates((p) => ({ ...p, [id]: false }));
@@ -3264,7 +3347,7 @@ export const SwapContractProvider = ({ children }) => {
           setSwappingStates((p) => ({ ...p, [id]: false }));
           return;
         }
-      } catch {}
+      } catch { }
 
       // Note: Contract now checks normal-auction participation using prior 3 appearances.
       // UI cannot pre-verify this precisely; rely on contract revert and show a clear hint on failure.
@@ -3335,9 +3418,9 @@ export const SwapContractProvider = ({ children }) => {
                     decodedErr.errorArgs = parsedError.args;
                     console.log(`Decoded custom error: ${parsedError.name}`, parsedError.args);
                   }
-                } catch {}
+                } catch { }
               }
-            } catch {}
+            } catch { }
             // Always treat failed staticCall as a hard failure; we'll show diagnostics instead of blindly sending
             lastRevertErr = decodedErr;
           }
@@ -3352,12 +3435,12 @@ export const SwapContractProvider = ({ children }) => {
         throw new Error('Reverse step 2 simulation failed unexpectedly.');
       };
 
-  let selected2;
-  let forceDirectSend2 = false; // reverse step 2: bypass estimateGas if proceeding despite sim failure
+      let selected2;
+      let forceDirectSend2 = false; // reverse step 2: bypass estimateGas if proceeding despite sim failure
       try { selected2 = await resolveReverseStep2(); } catch (simErr) {
         console.error("❌ Reverse Step 2 simulation failed:", simErr);
         // Enhanced error decoding with raw data parsing
-  let errName = simErr?.errorName || simErr?.data?.errorName || simErr?.error?.errorName;
+        let errName = simErr?.errorName || simErr?.data?.errorName || simErr?.error?.errorName;
         // Try to parse error data if not already decoded
         if (!errName && simErr?.data && typeof simErr.data === 'string' && simErr.data.startsWith('0x')) {
           try {
@@ -3366,10 +3449,10 @@ export const SwapContractProvider = ({ children }) => {
               errName = parsed.name;
               console.log('✅ Manually decoded error:', errName, parsed.args);
             }
-          } catch {}
+          } catch { }
         }
         let simMsg = simErr?.reason || simErr?.shortMessage || simErr?.message || simErr?.toString() || "Reverse Step 2 simulation failed";
-    if (errName === 'NoNormalAuctionParticipation') simMsg = "Complete Reverse Step 1 first and ensure you have STATE from that step.";
+        if (errName === 'NoNormalAuctionParticipation') simMsg = "Complete Reverse Step 1 first and ensure you have STATE from that step.";
         if (errName === 'UnsupportedToken') simMsg = "This token is not supported in the auction.";
         else if (errName === 'StateNotSet') simMsg = "STATE token is not configured yet.";
         else if (errName === 'NotStarted') simMsg = "Reverse window not active yet.";
@@ -3385,7 +3468,7 @@ export const SwapContractProvider = ({ children }) => {
         // If still generic, append raw error info for diagnostics
         if (simMsg.includes('unknown custom error') || simMsg.includes('execution reverted')) {
           const hexData = simErr?.data || simErr?.error?.data?.data || simErr?.error?.data;
-          simMsg = `Reverse Step 2 blocked: ${errName || 'Unknown reason'}. Check console for details. ${hexData ? `(data: ${hexData.slice(0,18)}...)` : ''}`;
+          simMsg = `Reverse Step 2 blocked: ${errName || 'Unknown reason'}. Check console for details. ${hexData ? `(data: ${hexData.slice(0, 18)}...)` : ''}`;
         }
         // Special handling for opaque "missing revert data" from nodes
         const msgTxt = (simErr?.shortMessage || simErr?.message || '').toLowerCase?.() || '';
@@ -3406,7 +3489,7 @@ export const SwapContractProvider = ({ children }) => {
             try {
               const tokenCtr = getCachedContract(todayAddr, 'ERC20_APPROVAL', httpProvider || provider);
               vaultToken = await tokenCtr.balanceOf(getAuctionAddress());
-            } catch {}
+            } catch { }
             console.log('[Reverse Step 2] Diagnostics:', {
               reverseActive: rev, supported: sup, paused,
               hasReverseStep1: s1, reverseStateFromStep1: ethers.formatEther(revBal || 0n),
@@ -3421,7 +3504,7 @@ export const SwapContractProvider = ({ children }) => {
             else if (s1 === false) simMsg = 'Complete Reverse Step 1 first.';
             else if (BigInt(revBal || 0n) === 0n) simMsg = 'No STATE recorded from Reverse Step 1 for this token.';
             // balance/expectedOut unknown here; rely on contract errors for insufficiency or vault liquidity
-          } catch {}
+          } catch { }
         }
         // If developer override is enabled, allow proceeding to send tx despite simulation failure
         let proceedDirect = false;
@@ -3429,7 +3512,7 @@ export const SwapContractProvider = ({ children }) => {
           if (allowDirectContractCalls()) {
             proceedDirect = window.confirm('Simulation failed. Proceed to send burnStateForTokens anyway? This may revert.');
           }
-        } catch {}
+        } catch { }
         if (!proceedDirect) {
           notifyError(simMsg);
           setSwappingStates((p) => ({ ...p, [id]: false }));
@@ -3463,7 +3546,7 @@ export const SwapContractProvider = ({ children }) => {
         populated.value = populated.value ?? 0n;
         populated.gasLimit = gas;
         console.log(`[Reverse Step 2] Forcing send with gasLimit=${gas.toString()}`);
-        console.log('[Reverse Step 2] Tx preview:', { to: populated.to, dataLen: (populated.data||'').length, gas: gas.toString() });
+        console.log('[Reverse Step 2] Tx preview:', { to: populated.to, dataLen: (populated.data || '').length, gas: gas.toString() });
         burnTx = await signer.sendTransaction(populated);
       } else {
         burnTx = await burnFn(...selected2.args);
@@ -3478,7 +3561,7 @@ export const SwapContractProvider = ({ children }) => {
         try {
           const addrLc = (tokenAddress || '').toLowerCase();
           if (addrLc) setUserReverseStep2((prev) => ({ ...prev, [addrLc]: true, [tokenAddress]: true }));
-        } catch {}
+        } catch { }
         // Safe background refresh (debounced, mount-aware)
         triggerBackgroundRefresh();
       } else {
@@ -3512,42 +3595,42 @@ export const SwapContractProvider = ({ children }) => {
         [id]: "Checking allowance...",
       }));
 
-    const ContractAddressToUse = getAuctionAddress();
-    console.log('[Step3] AuctionSwap contract address:', ContractAddressToUse);
-    console.log('[Step3] Connected user address:', address);
-    
-    // For NORMAL auction Step 3, swapTokens() spends STATE from the user.
-    // Get the actual STATE amount needed for this swap
-    const todayAddrTemp = await getTodayTokenAddress(AllContracts.AuctionContract);
-    const userStateNeeded = await AllContracts.AuctionContract.getUserStateBalance(address, todayAddrTemp).catch(() => 0n);
-    
-    console.log('[Step3] STATE needed for swap:', ethers.formatEther(userStateNeeded));
-    
-    // Always approve STATE token to the SWAP contract if insufficient
-    const stateTokenContract = getCachedContract(getStateAddress(), 'ERC20_APPROVAL', signer);
-    console.log('[Step3] STATE token address:', getStateAddress());
-    
-    // Check actual STATE balance in user's wallet FIRST
-    const userStateInWallet = await stateTokenContract.balanceOf(address);
-    console.log('[Step3] STATE in user wallet:', ethers.formatEther(userStateInWallet));
-    
-    if (userStateInWallet < userStateNeeded) {
-      notifyError(`Insufficient STATE in wallet! Required: ${ethers.formatEther(userStateNeeded)} STATE • In wallet: ${ethers.formatEther(userStateInWallet)} STATE. The STATE from Step 2 should be in your wallet. Please check your Step 2 transaction.`);
-      setTxStatusForSwap("error");
-      setSwappingStates((prev) => ({ ...prev, [id]: false }));
-      return;
-    }
-    
-    const allowance = await stateTokenContract.allowance(address, ContractAddressToUse);
-    console.log('[Step3] Current STATE allowance to AuctionSwap:', ethers.formatEther(allowance));
-    
-    // Check if allowance is sufficient for the swap amount
-    if (allowance < userStateNeeded) {
-      setButtonTextStates((prev) => ({
-        ...prev,
-        [id]: "Approving STATE...",
-      }));
-      console.log(`[Step3] Insufficient allowance (${ethers.formatEther(allowance)} < ${ethers.formatEther(userStateNeeded)}). Sending approval transaction to ${ContractAddressToUse}...`);        try {
+      const ContractAddressToUse = getAuctionAddress();
+      console.log('[Step3] AuctionSwap contract address:', ContractAddressToUse);
+      console.log('[Step3] Connected user address:', address);
+
+      // For NORMAL auction Step 3, swapTokens() spends STATE from the user.
+      // Get the actual STATE amount needed for this swap
+      const todayAddrTemp = await getTodayTokenAddress(AllContracts.AuctionContract);
+      const userStateNeeded = await AllContracts.AuctionContract.getUserStateBalance(address, todayAddrTemp).catch(() => 0n);
+
+      console.log('[Step3] STATE needed for swap:', ethers.formatEther(userStateNeeded));
+
+      // Always approve STATE token to the SWAP contract if insufficient
+      const stateTokenContract = getCachedContract(getStateAddress(), 'ERC20_APPROVAL', signer);
+      console.log('[Step3] STATE token address:', getStateAddress());
+
+      // Check actual STATE balance in user's wallet FIRST
+      const userStateInWallet = await stateTokenContract.balanceOf(address);
+      console.log('[Step3] STATE in user wallet:', ethers.formatEther(userStateInWallet));
+
+      if (userStateInWallet < userStateNeeded) {
+        notifyError(`Insufficient STATE in wallet! Required: ${ethers.formatEther(userStateNeeded)} STATE • In wallet: ${ethers.formatEther(userStateInWallet)} STATE. The STATE from Step 2 should be in your wallet. Please check your Step 2 transaction.`);
+        setTxStatusForSwap("error");
+        setSwappingStates((prev) => ({ ...prev, [id]: false }));
+        return;
+      }
+
+      const allowance = await stateTokenContract.allowance(address, ContractAddressToUse);
+      console.log('[Step3] Current STATE allowance to AuctionSwap:', ethers.formatEther(allowance));
+
+      // Check if allowance is sufficient for the swap amount
+      if (allowance < userStateNeeded) {
+        setButtonTextStates((prev) => ({
+          ...prev,
+          [id]: "Approving STATE...",
+        }));
+        console.log(`[Step3] Insufficient allowance (${ethers.formatEther(allowance)} < ${ethers.formatEther(userStateNeeded)}). Sending approval transaction to ${ContractAddressToUse}...`); try {
           setTxStatusForSwap("Approving");
           // Approve unlimited amount (max uint256)
           const maxUint256 = BigInt("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
@@ -3559,7 +3642,7 @@ export const SwapContractProvider = ({ children }) => {
           console.log('[Step3] Approval transaction sent, hash:', approveTx.hash);
           await approveTx.wait();
           console.log("[Step3] ✅ Approval successful!");
-          
+
           // Verify approval went through
           const newAllowance = await stateTokenContract.allowance(address, ContractAddressToUse);
           console.log('[Step3] New allowance after approval:', ethers.formatEther(newAllowance));
@@ -3575,12 +3658,12 @@ export const SwapContractProvider = ({ children }) => {
           }
           setSwappingStates((prev) => ({ ...prev, [id]: false }));
           return false;
+        }
+      } else {
+        console.log(
+          `[Step3] ✅ STATE allowance sufficient (${ethers.formatEther(allowance)} >= ${ethers.formatEther(userStateNeeded)}). Proceeding to swap.`
+        );
       }
-    } else {
-      console.log(
-        `[Step3] ✅ STATE allowance sufficient (${ethers.formatEther(allowance)} >= ${ethers.formatEther(userStateNeeded)}). Proceeding to swap.`
-      );
-    }
       // Resolve today's token for preflights using a fresh read-only provider snapshot
       const readOnlyAuction = AllContracts.AuctionContract.connect(httpProvider);
       const todayAddr = await getTodayTokenAddress(readOnlyAuction);
@@ -3621,7 +3704,7 @@ export const SwapContractProvider = ({ children }) => {
           setSwappingStates((prev) => ({ ...prev, [id]: false }));
           return;
         }
-      } catch {}
+      } catch { }
 
       // Preflight: step requirements and balance
       try {
@@ -3632,7 +3715,7 @@ export const SwapContractProvider = ({ children }) => {
           setSwappingStates((prev) => ({ ...prev, [id]: false }));
           return;
         }
-      } catch {}
+      } catch { }
       try {
         if (typeof AllContracts.AuctionContract.hasCompletedStep2 === 'function') {
           const s2 = await AllContracts.AuctionContract.hasCompletedStep2(address, todayAddr);
@@ -3643,7 +3726,7 @@ export const SwapContractProvider = ({ children }) => {
             return;
           }
         }
-      } catch {}
+      } catch { }
 
       // Require some STATE to swap (either wallet balance or recorded user balance for this token)
       try {
@@ -3657,7 +3740,7 @@ export const SwapContractProvider = ({ children }) => {
           setSwappingStates((prev) => ({ ...prev, [id]: false }));
           return;
         }
-      } catch {}
+      } catch { }
 
       // Additional preflights: paused, pair availability & reserves
       try {
@@ -3668,7 +3751,7 @@ export const SwapContractProvider = ({ children }) => {
           setSwappingStates((prev) => ({ ...prev, [id]: false }));
           return;
         }
-      } catch {}
+      } catch { }
       try {
         const stateAddr = getStateAddress();
         const pairAddr = await AllContracts.AuctionContract.getPairAddress(todayAddr).catch(() => ethers.ZeroAddress);
@@ -3695,14 +3778,14 @@ export const SwapContractProvider = ({ children }) => {
           setSwappingStates((prev) => ({ ...prev, [id]: false }));
           return;
         }
-        
+
         // Check if pool has sufficient liquidity for the swap
         // Get user's STATE balance from Step 2
         const userStateBalance = await AllContracts.AuctionContract.getUserStateBalance(address, todayAddr).catch(() => 0n);
         if (userStateBalance > 0n) {
           // Max safe swap is 20% of pool STATE reserves to avoid excessive price impact
           const maxSafeSwap = (a * 20n) / 100n;
-          
+
           if (userStateBalance > maxSafeSwap) {
             const userStateFormatted = ethers.formatEther(userStateBalance);
             const maxSafeFormatted = ethers.formatEther(maxSafeSwap);
@@ -3715,45 +3798,45 @@ export const SwapContractProvider = ({ children }) => {
             return;
           }
         }
-      } catch {}
+      } catch { }
 
       setButtonTextStates((prev) => ({ ...prev, [id]: "Swapping..." }));
       setTxStatusForSwap("pending");
-      
+
       // Additional diagnostics before simulation
       try {
         console.log('[Step3] ===== Pre-simulation diagnostics =====');
         const routerAddr = await AllContracts.AuctionContract.pulseXRouter().catch(() => null);
         console.log('[Step3] PulseX Router address:', routerAddr);
-        
+
         const pairAddr = await AllContracts.AuctionContract.getPairAddress(todayAddr).catch(() => null);
         console.log('[Step3] Pair address for today token:', pairAddr);
-        
+
         const userStateBalance = await AllContracts.AuctionContract.getUserStateBalance(address, todayAddr);
         console.log('[Step3] User STATE balance for swap (stored in contract):', ethers.formatEther(userStateBalance));
-        
+
         // CRITICAL: Check actual STATE in user's wallet
         const userWalletStateBalance = await stateTokenContract.balanceOf(address);
         console.log('[Step3] 🔴 STATE in user WALLET (actual):', ethers.formatEther(userWalletStateBalance));
         console.log('[Step3] 🔴 STATE needed from wallet:', ethers.formatEther(userStateBalance));
-        
+
         if (userWalletStateBalance < userStateBalance) {
           console.error('[Step3] ❌ INSUFFICIENT STATE IN WALLET!');
           console.error('[Step3] Required:', ethers.formatEther(userStateBalance));
           console.error('[Step3] Available:', ethers.formatEther(userWalletStateBalance));
           console.error('[Step3] Missing:', ethers.formatEther(userStateBalance - userWalletStateBalance));
         }
-        
+
         // Final allowance check before simulation
         const finalAllowance = await stateTokenContract.allowance(address, ContractAddressToUse);
         console.log('[Step3] Final STATE allowance to AuctionSwap:', ethers.formatEther(finalAllowance));
-        
+
         if (finalAllowance < userStateBalance) {
           console.error('[Step3] ❌ INSUFFICIENT ALLOWANCE!');
           console.error('[Step3] Required allowance:', ethers.formatEther(userStateBalance));
           console.error('[Step3] Current allowance:', ethers.formatEther(finalAllowance));
         }
-        
+
         // Expected output: not available via public ABI; skip internal helper
         // We rely on pool reserves pre-checks and slippage handled by the contract
         console.log('[Step3] Skipping expected output calc (internal-only function).');
@@ -3761,7 +3844,7 @@ export const SwapContractProvider = ({ children }) => {
       } catch (diagErr) {
         console.error('[Step3] Pre-simulation diagnostics error:', diagErr);
       }
-      
+
       // Simulate to surface precise custom errors before sending the tx
       const c = AllContracts.AuctionContract.connect(signer);
       let forceDirectSend = false; // when true, bypass estimateGas by specifying gasLimit
@@ -3824,7 +3907,7 @@ export const SwapContractProvider = ({ children }) => {
                   return;
                 }
               }
-            } catch {}
+            } catch { }
           }
         }
         // Attempt to decode custom error
@@ -3856,7 +3939,7 @@ export const SwapContractProvider = ({ children }) => {
               }
             }
           }
-        } catch {}
+        } catch { }
         let proceedDirectAuto = false;
         let diag = {};
         if ((simErr?.shortMessage || simErr?.message)?.toLowerCase?.().includes('missing revert data')) {
@@ -3883,7 +3966,7 @@ export const SwapContractProvider = ({ children }) => {
                 }
                 poolDiagnostic = ` • Pool: ${stateReserve} STATE / ${tokenReserve} TOKEN`;
               }
-            } catch {}
+            } catch { }
             const [rev, act, s1, s2, hasSwapped, stateBalance, stateAllowance, tLeftNow] = await Promise.all([
               readOnlyAuction.isReverseAuctionActive(todayAddr).catch(() => undefined),
               readOnlyAuction.isAuctionActive(todayAddr).catch(() => undefined),
@@ -3909,7 +3992,7 @@ export const SwapContractProvider = ({ children }) => {
                 proceedDirectAuto = true;
                 console.warn('[Step3] Auto-proceed: staticCall returned missing-revert-data but all preflights are OK. Proceeding to send tx.');
               }
-            } catch {}
+            } catch { }
           } catch {
             msg = "Swap not available now (window inactive or prerequisites unmet). Refresh auction status and try again.";
           }
@@ -3920,7 +4003,7 @@ export const SwapContractProvider = ({ children }) => {
           if (!proceedDirect && allowDirectContractCalls()) {
             proceedDirect = window.confirm('Simulation failed. Proceed to send swapTokens() anyway? This may revert.');
           }
-        } catch {}
+        } catch { }
         if (!proceedDirect) {
           notifyError(msg);
           setTxStatusForSwap("error");
@@ -3936,7 +4019,7 @@ export const SwapContractProvider = ({ children }) => {
       let swapTx;
       if (forceDirectSend) {
         const gas = getFallbackGasLimit('fallbackGasLimitStep3', 500000n);
-        
+
         // ALWAYS encode calldata manually for swapTokens() to ensure it's never empty
         let calldata;
         try {
@@ -3949,7 +4032,7 @@ export const SwapContractProvider = ({ children }) => {
           setSwappingStates((p) => ({ ...p, [id]: false }));
           return;
         }
-        
+
         const toAddr = AllContracts.AuctionContract.target || await AllContracts.AuctionContract.getAddress?.();
         if (!toAddr) {
           notifyError('Contract address unavailable. Please refresh.');
@@ -3957,22 +4040,22 @@ export const SwapContractProvider = ({ children }) => {
           setSwappingStates((p) => ({ ...p, [id]: false }));
           return;
         }
-        
+
         const txRequest = {
           to: toAddr,
           data: calldata,
           value: 0n,
           gasLimit: gas,
         };
-        
+
         console.log(`[Step3] Forcing send with gasLimit=${gas.toString()}`);
-        console.log('[Step3] Tx request:', { 
-          to: txRequest.to, 
-          dataLen: txRequest.data.length, 
-          data: txRequest.data.slice(0, 10) + '...', 
-          gas: gas.toString() 
+        console.log('[Step3] Tx request:', {
+          to: txRequest.to,
+          dataLen: txRequest.data.length,
+          data: txRequest.data.slice(0, 10) + '...',
+          gas: gas.toString()
         });
-        
+
         swapTx = await signer.sendTransaction(txRequest);
       } else {
         swapTx = await swapFn();
@@ -3982,7 +4065,7 @@ export const SwapContractProvider = ({ children }) => {
       if (swapReceipt.status === 1) {
         console.log("Swap Complete!");
         setTxStatusForSwap("confirmed");
-  notifySuccess(`Swap successful`);
+        notifySuccess(`Swap successful`);
         setButtonTextStates((prev) => ({ ...prev, [id]: "Swap Complete!" }));
         // Optimistic update: set swapped flag immediately for instant UI feedback
         try {
@@ -3990,7 +4073,7 @@ export const SwapContractProvider = ({ children }) => {
           if (tokenAddr) {
             setUserHashSwapped((prev) => ({ ...prev, [tokenAddr]: 'true', [todayAddr]: 'true' }));
           }
-        } catch {}
+        } catch { }
         // Safe background refresh (debounced, mount-aware)
         triggerBackgroundRefresh();
       } else {
@@ -4050,10 +4133,10 @@ export const SwapContractProvider = ({ children }) => {
         return;
       }
 
-    // Determine the correct token-of-the-day from the Auction contract
-    const todayToken = await getTodayTokenAddress(AllContracts.AuctionContract);
-    // Active flag will be derived from on-chain calls below; default undefined here
-    const active = undefined;
+      // Determine the correct token-of-the-day from the Auction contract
+      const todayToken = await getTodayTokenAddress(AllContracts.AuctionContract);
+      // Active flag will be derived from on-chain calls below; default undefined here
+      const active = undefined;
 
       // If token is zero, there's no schedule; otherwise proceed and rely on claimable check
       if (!todayToken || todayToken === ethers.ZeroAddress) {
@@ -4097,7 +4180,7 @@ export const SwapContractProvider = ({ children }) => {
       try {
         const onchainActive = await AllContracts.AuctionContract.isAuctionActive(todayToken);
         if (typeof onchainActive === "boolean") fallbackActive = onchainActive;
-      } catch {}
+      } catch { }
       if (debugActiveWindow === undefined || fallbackActive === undefined) {
         try {
           const left = await AllContracts.AuctionContract.getAuctionTimeLeft(todayToken);
@@ -4106,7 +4189,7 @@ export const SwapContractProvider = ({ children }) => {
             // Treat positive time left as active when no explicit flag is provided
             fallbackActive = Number(left) > 0;
           }
-        } catch {}
+        } catch { }
       }
 
       // If the provided TokenAddress doesn't match today's token, prefer today's token
@@ -4131,11 +4214,11 @@ export const SwapContractProvider = ({ children }) => {
         console.debug("getClaimable check skipped:", err?.message || err);
       }
 
-  // Compute a single effective Active flag for diagnostics
+      // Compute a single effective Active flag for diagnostics
       const effectiveActive = (debugActiveWindow !== undefined ? debugActiveWindow :
-                              (fallbackActive !== undefined ? fallbackActive :
-                              (active !== undefined ? !!active :
-                              (typeof debugSecondsLeft === 'number' ? debugSecondsLeft > 0 : undefined))));
+        (fallbackActive !== undefined ? fallbackActive :
+          (active !== undefined ? !!active :
+            (typeof debugSecondsLeft === 'number' ? debugSecondsLeft > 0 : undefined))));
 
       // Removed previous debug toast
 
@@ -4146,14 +4229,14 @@ export const SwapContractProvider = ({ children }) => {
           notifyError("Reverse auction window is active; Claim is available only during normal windows.");
           return;
         }
-      } catch {}
+      } catch { }
       try {
         const isActNow = await AllContracts.AuctionContract.isAuctionActive(todayToken);
         if (!isActNow) {
           notifyError("Auction window not active for today's token. Please wait for the next slot.");
           return;
         }
-      } catch {}
+      } catch { }
 
       // Governance pause gate: if AuctionSwap is paused, show a clear error and stop
       try {
@@ -4162,14 +4245,14 @@ export const SwapContractProvider = ({ children }) => {
           notifyError("Auction is paused by governance.");
           return;
         }
-      } catch {}
+      } catch { }
 
-  // Send the claim using the correct signature for the deployed distributor
-  // Strategy: determine ONE callable function upfront; simulate; then send once.
-  let claimFn;
-  let claimCtx;
-  let fnKey = 'claim()';
-  try {
+      // Send the claim using the correct signature for the deployed distributor
+      // Strategy: determine ONE callable function upfront; simulate; then send once.
+      let claimFn;
+      let claimCtx;
+      let fnKey = 'claim()';
+      try {
         const distributor = AllContracts.airdropDistributor;
         const distAddr = AllContracts?._airdropDistributorAddress || distributor?.target;
         const iface = distributor?.interface;
@@ -4211,7 +4294,7 @@ export const SwapContractProvider = ({ children }) => {
         try {
           const paused = await AllContracts.AuctionContract.paused?.();
           if (paused) msg = "Auction is paused by governance.";
-        } catch {}
+        } catch { }
         if (/missing revert data|CALL_EXCEPTION/i.test(msg) || /execution reverted(?!:)/i.test(msg)) {
           msg = "Auction is paused by governance.";
         }
@@ -4231,7 +4314,7 @@ export const SwapContractProvider = ({ children }) => {
           if (tokenAddr) {
             setAirdropClaimed((prev) => ({ ...prev, [tokenAddr]: 'true', [todayToken]: 'true' }));
           }
-        } catch {}
+        } catch { }
         // Trigger safe background refresh (debounced, mount-safe)
         triggerBackgroundRefresh();
       } catch (sendErr) {
@@ -4247,7 +4330,7 @@ export const SwapContractProvider = ({ children }) => {
         try {
           const paused = await AllContracts.AuctionContract.paused?.();
           if (paused) msg = "Auction is paused by governance.";
-        } catch {}
+        } catch { }
         if (/missing revert data|CALL_EXCEPTION/i.test(msg) || /execution reverted(?!:)/i.test(msg)) {
           msg = "Auction is paused by governance.";
         }
@@ -4269,12 +4352,12 @@ export const SwapContractProvider = ({ children }) => {
       try {
         const paused = await AllContracts.AuctionContract.paused?.();
         if (paused) msg = "Auction is paused by governance.";
-      } catch {}
+      } catch { }
       if (/missing revert data|CALL_EXCEPTION/i.test(msg) || /execution reverted(?!:)/i.test(msg)) {
         msg = "Auction is paused by governance.";
       }
       // Update loading toast to error
-  toast.error(msg, { id: claimToastId, position: 'top-center' });
+      toast.error(msg, { id: claimToastId, position: 'top-center' });
       return;
     }
   };
@@ -4297,7 +4380,7 @@ export const SwapContractProvider = ({ children }) => {
     }
 
     // 👇 store toast ID so we can dismiss it later
-  const toastId = toast.loading(`Adding token to wallet...`, { position: 'top-center' });
+    const toastId = toast.loading(`Adding token to wallet...`, { position: 'top-center' });
 
     try {
       // Fetch actual symbol and decimals from the contract using cached contract
@@ -4367,7 +4450,7 @@ export const SwapContractProvider = ({ children }) => {
         if (AllContracts?.buyBurnController && typeof AllContracts.buyBurnController.stateWplsPool === 'function') {
           stateWplsPair = await AllContracts.buyBurnController.stateWplsPool();
         }
-      } catch {}
+      } catch { }
 
       // Fallback to Auction contract mapping if controller not set
       if (!stateWplsPair || stateWplsPair === ethers.ZeroAddress) {
@@ -4376,7 +4459,7 @@ export const SwapContractProvider = ({ children }) => {
           if (AllContracts?.AuctionContract && typeof AllContracts.AuctionContract.getPairAddress === 'function') {
             stateWplsPair = await AllContracts.AuctionContract.getPairAddress(stateAddr);
           }
-        } catch {}
+        } catch { }
       }
 
       // If controller available, try to get reserves directly (in case pair ABI/reserves call fails)
@@ -4395,7 +4478,7 @@ export const SwapContractProvider = ({ children }) => {
             };
           }
         }
-      } catch {}
+      } catch { }
 
       if (!stateWplsPair || stateWplsPair === ethers.ZeroAddress) {
         console.warn('STATE/WPLS pair not available; pSTATE→PLS ratio set to 0');
@@ -4447,7 +4530,7 @@ export const SwapContractProvider = ({ children }) => {
       try {
         const payload = { ratio: ratioFloat.toString(), ratioWei: ratioWei.toString(), updatedAt: Date.now() };
         localStorage.setItem('pstate_pls_ratio', JSON.stringify(payload));
-      } catch {}
+      } catch { }
     } catch (err) {
       console.warn("Error fetching pSTATE→PLS ratio from reserves:", err?.message || err);
       // As a last resort, set to 0 to avoid misleading UI values
@@ -4697,7 +4780,24 @@ export const SwapContractProvider = ({ children }) => {
     }
   };
 
+  // Module-level cache + backoff for DAI price to prevent request flooding
+  const _daiPriceCacheRef = useRef({ data: null, ts: 0, failCount: 0 });
+  const DAI_PRICE_TTL = 60000; // 60s cache
+  const DAI_PRICE_MAX_BACKOFF = 300000; // 5 min max backoff
+
   const fetchDaiLastPrice = async () => {
+    const now = Date.now();
+    const cache = _daiPriceCacheRef.current;
+
+    // Return early if cached result is still valid
+    if (cache.data !== null && (now - cache.ts) < DAI_PRICE_TTL) return;
+
+    // Exponential backoff: skip if too soon after last failure
+    if (cache.failCount > 0) {
+      const backoff = Math.min(DAI_PRICE_MAX_BACKOFF, 1000 * Math.pow(2, cache.failCount));
+      if ((now - cache.ts) < backoff) return;
+    }
+
     try {
       const chainForGecko = getRuntimeConfigSync()?.network?.chainId || 369;
       const wplsAddr = (getRuntimeConfigSync()?.dex?.baseToken?.address) || WPLS_ADDRESS;
@@ -4724,280 +4824,64 @@ export const SwapContractProvider = ({ children }) => {
 
       // Store as string for consistent UI rendering and store batching.
       setDaiPriceChange(String(parsed));
+      _daiPriceCacheRef.current = { data: parsed, ts: Date.now(), failCount: 0 };
     } catch (error) {
-      // Don’t overwrite with 0.0 on failure; keep last known value.
+      // Don't overwrite with 0.0 on failure; keep last known value.
+      _daiPriceCacheRef.current = { ...cache, ts: Date.now(), failCount: cache.failCount + 1 };
       console.warn("Error fetching DAI price:", error);
     }
   }
 
   // Fetch Liquidity Strength source ASAP (independent of staged refresh).
   // Keeps UI responsive even if RPC calls in staged refresh are slow.
+  // NOTE: fetchDaiLastPrice independent polling removed — it is already called
+  // by runStagedRefresh (both cached and full-refresh paths), so a separate
+  // setInterval + visibilitychange listener was creating duplicate requests.
+  // The cache + backoff in fetchDaiLastPrice itself prevents redundant calls.
+
+  // ============ STORE SYNC FOR EXTERNAL STATE ============
+  // Sync loading/address from ContractContext (not from local useState, so no setter wrapper)
   useEffect(() => {
-    if (loading) return;
-    let cancelled = false;
-
-    const run = () => {
-      if (cancelled) return;
-      fetchDaiLastPrice();
-    };
-
-    run();
-
-    const onVis = () => {
-      if (document.hidden) return;
-      run();
-    };
-
-    const intervalId = setInterval(run, 90000);
-    try { document.addEventListener('visibilitychange', onVis); } catch {}
-
-    return () => {
-      cancelled = true;
-      clearInterval(intervalId);
-      try { document.removeEventListener('visibilitychange', onVis); } catch {}
-    };
+    useUIStore.getState().setBatch({ isLoading: loading, loading });
   }, [loading]);
-
-  // ============ ZUSTAND STORE SYNC ============
-  // Sync React Context state to Zustand stores for gradual migration
-  // Components can start using stores directly for better performance
-  const setAuctionBatch = useAuctionStore(state => state.setBatch);
-  const setUserBatch = useUserStore(state => state.setBatch);
-  const setTokenBatch = useTokenStore(state => state.setBatch);
-  const setUIBatch = useUIStore(state => state.setBatch);
-
-  // Sync auction data to store (with both casing for compatibility)
   useEffect(() => {
-    setAuctionBatch({
-      auctionTime: AuctionTime,
-      AuctionTime: AuctionTime, // Alias for context compatibility
-      auctionPhase,
-      auctionPhaseSeconds,
-      auctionEndAt: AuctionEndAt,
-      chainTimeSkew,
-      duration: auctionDuration,
-      interval: auctionInterval,
-      todayToken: todayTokenAddress,
-      todayTokenAddress,
-      todayTokenSymbol,
-      todayTokenName,
-      todayTokenDecimals,
-      todayTokenIndex: null,
-      isReverse: reverseWindowActive,
-      reverseWindowActive,
-      IsAuctionActive: IsAuctionActive,
-      isReversed: isReversed,
-      InputAmount: InputAmount,
-      OutPutAmount: OutPutAmount,
-      AirDropAmount: AirDropAmount,
-      CurrentCycleCount: CurrentCycleCount,
-    });
-  }, [AuctionTime, auctionPhase, auctionPhaseSeconds, AuctionEndAt, chainTimeSkew, auctionDuration, auctionInterval, todayTokenAddress, todayTokenSymbol, todayTokenName, todayTokenDecimals, reverseWindowActive, IsAuctionActive, isReversed, InputAmount, OutPutAmount, AirDropAmount, CurrentCycleCount, setAuctionBatch]);
+    useUserStore.getState().setBatch({ address });
+  }, [address]);
 
-  // Sync user data to store (with both casing for compatibility)
-  useEffect(() => {
-    setUserBatch({
-      address,
-      userHashSwapped: userHashSwapped,
-      userHasSwapped: userHashSwapped,
-      userHasBurned,
-      userHasAirdropClaimed: AirdropClaimed,
-      airdropClaimed: AirdropClaimed,
-      AirdropClaimed: AirdropClaimed, // Alias for context compatibility
-      userReverseStep1,
-      userReverseStep2,
-      userHasReverseSwapped,
-      state_Balance: StateBalance,
-      isClaimProcessing: isCliamProcessing,
-      reverseStateMap,
-      UsersSupportedTokens: UsersSupportedTokens, // Alias for context compatibility
-    });
-  }, [address, userHashSwapped, userHasBurned, AirdropClaimed, userReverseStep1, userReverseStep2, userHasReverseSwapped, StateBalance, isCliamProcessing, reverseStateMap, UsersSupportedTokens, setUserBatch]);
-
-  // Sync token data to store (with both casing for compatibility)
-  useEffect(() => {
-    setTokenBatch({
-      tokenNames: TokenNames,
-      TokenNames: TokenNames, // Alias for context compatibility
-      tokenMap,
-      tokenRatio: TokenRatio,
-      TokenRatio: TokenRatio, // Alias for context compatibility
-      tokenRatios: TokenRatio,
-      burnedAmount: burnedAmount,
-      burnedAmounts: burnedAmount,
-      tokenPairAddress: TokenPariAddress,
-      pairAddresses: TokenPariAddress,
-      tokenBalance: TokenBalance,
-      TokenBalance: TokenBalance, // Alias for context compatibility
-      tokenBalances: TokenBalance,
-      isAuctionActive: IsAuctionActive,
-      isReversed,
-      isTokenRenounce: isTokenRenounce,
-      renounceStatus: isTokenRenounce,
-      currentCycleCount: CurrentCycleCount,
-      burnedLPAmount: burnedLPAmount,
-      burnedLPAmounts: burnedLPAmount,
-      RatioTargetsofTokens: TokenRatio, // Use TokenRatio as ratio targets
-      supportedToken: supportedToken,
-      TimeLeftClaim: TimeLeftClaim,
-      pstateToPlsRatio: pstateToPlsRatio,
-      DaipriceChange: DaipriceChange,
-    });
-  }, [TokenNames, tokenMap, TokenRatio, burnedAmount, TokenPariAddress, TokenBalance, IsAuctionActive, isReversed, isTokenRenounce, CurrentCycleCount, burnedLPAmount, supportedToken, TimeLeftClaim, pstateToPlsRatio, DaipriceChange, setTokenBatch]);
-
-  // Sync UI state to store (with both casing for compatibility)
-  useEffect(() => {
-    setUIBatch({
-      isLoading: loading,
-      loading: loading,
-      swappingStates,
-      dexSwappingStates: DexswappingStates,
-      DexswappingStates: DexswappingStates, // Alias for context compatibility
-      buttonTextStates,
-      dexButtonTextStates: DexbuttonTextStates,
-      txStatusForSwap,
-      txStatusForAdding,
-      claiming,
-      isCliamProcessing: isCliamProcessing, // Alias for typo in original
-    });
-  }, [loading, swappingStates, DexswappingStates, buttonTextStates, DexbuttonTextStates, txStatusForSwap, txStatusForAdding, claiming, isCliamProcessing, setUIBatch]);
-
-  // Memoize the context value to prevent unnecessary re-renders
-  // This is critical for performance - without this, every state change
-  // causes ALL consumers of useSwapContract() to re-render
+  // ============ CONTEXT VALUE (ACTIONS ONLY) ============
+  // Data is now read directly from Zustand stores by consumers.
+  // Context only provides action functions that need signer/contracts.
   const contextValue = useMemo(() => ({
-    //WALLET States
-    provider,
-    signer,
-    loading,
-    address,
+    // Transaction/swap actions
     handleDexTokenSwap,
     performRatioSwap,
     performReverseSwapStep1,
     performReverseSwapStep2,
-    CalculationOfCost,
-    setDexSwappingStates,
-    DexswappingStates,
-    UsersSupportedTokens,
-    TotalCost,
-    isAirdropClaimed,
-    setClaiming,
-    TokenBalance,
-    claiming,
     SwapTokens,
-    setDavAndStateIntoSwap,
+    CalculationOfCost,
+    // Token management actions
     handleAddToken,
-    userHashSwapped,
-    userHasReverseSwapped,
-    isCliamProcessing,
-    isTokenRenounce,
     AddTokenIntoSwapContract,
     isTokenSupporteed,
-    burnedAmount,
-    buttonTextStates,
-    DexbuttonTextStates,
-    DavAddress,
-    StateAddress,
-    StateBalance,
-    swappingStates,
-    getStateTokenBalanceAndSave,
-    TokenPariAddress,
-    AuctionTime,
-    auctionPhase,
-    auctionPhaseSeconds,
-    txStatusForSwap,
-    userHasBurned,
-    userReverseStep1,
-    userReverseStep2,
-    fetchUserTokenAddresses,
-    AirdropClaimed,
-    isReversed,
-    InputAmount,
-    burnedLPAmount,
-    DaipriceChange,
-    setTxStatusForSwap,
-    AirDropAmount,
-    reverseStateMap,
-    getAirdropAmount,
-    supportedToken,
-    OutPutAmount,
-    CurrentCycleCount,
-    giveRewardForAirdrop,
-    CheckMintBalance,
-    getInputAmount,
-    TokenNames,
-    getOutPutAmount,
-    txStatusForAdding,
-    setTxStatusForAdding,
-    TimeLeftClaim,
     renounceTokenContract,
-    tokenMap,
-    IsAuctionActive,
-    TokenRatio,
+    setDavAndStateIntoSwap,
+    getStateTokenBalanceAndSave,
+    fetchUserTokenAddresses,
+    // Airdrop/claim actions
+    CheckMintBalance,
+    isAirdropClaimed,
+    giveRewardForAirdrop,
+    getAirdropAmount,
+    getInputAmount,
+    getOutPutAmount,
     getTokenRatio,
-    pstateToPlsRatio,
-    auctionDuration,
-    auctionInterval,
-    reverseWindowActive,
-    todayTokenAddress,
-    todayTokenSymbol,
-    todayTokenName,
-    todayTokenDecimals,
+    // UI state setters (still needed by some consumers)
+    setTxStatusForSwap,
+    setTxStatusForAdding,
+    setClaiming,
+    setDexSwappingStates,
   }), [
-    // Only include values that actually change and need to trigger re-renders
-    // Stable references (functions wrapped in useCallback) don't need to be listed
-    provider,
-    signer,
-    loading,
-    address,
-    DexswappingStates,
-    UsersSupportedTokens,
-    TotalCost,
-    TokenBalance,
-    claiming,
-    userHashSwapped,
-    userHasReverseSwapped,
-    isCliamProcessing,
-    isTokenRenounce,
-    burnedAmount,
-    buttonTextStates,
-    DexbuttonTextStates,
-    DavAddress,
-    StateAddress,
-    StateBalance,
-    swappingStates,
-    TokenPariAddress,
-    AuctionTime,
-    auctionPhase,
-    auctionPhaseSeconds,
-    txStatusForSwap,
-    userHasBurned,
-    userReverseStep1,
-    userReverseStep2,
-    AirdropClaimed,
-    isReversed,
-    InputAmount,
-    burnedLPAmount,
-    DaipriceChange,
-    AirDropAmount,
-    reverseStateMap,
-    supportedToken,
-    OutPutAmount,
-    CurrentCycleCount,
-    TokenNames,
-    txStatusForAdding,
-    TimeLeftClaim,
-    tokenMap,
-    IsAuctionActive,
-    TokenRatio,
-    pstateToPlsRatio,
-    auctionDuration,
-    auctionInterval,
-    reverseWindowActive,
-    todayTokenAddress,
-    todayTokenSymbol,
-    todayTokenName,
-    todayTokenDecimals,
+    // Action functions are stable (wrapped in useCallback), no deps needed that change
   ]);
 
   return (

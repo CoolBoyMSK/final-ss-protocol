@@ -24,7 +24,7 @@ import { calculatePlsValueNumeric, formatNumber, formatWithCommas } from "../../
 import { calculateAmmValuesAsync } from "../../utils/workerManager";
 import { getDeploymentStatus, getRuntimeConfigSync } from "../../Constants/RuntimeConfig";
 // Optimized: Use Zustand stores for selective subscriptions
-import { useDeploymentStore, useTokenStore } from "../../stores";
+import { useDeploymentStore, useTokenStore, useAuctionStore } from "../../stores";
 
 const AuctionSection = () => {
     const chainId = useChainId();
@@ -58,7 +58,8 @@ const AuctionSection = () => {
         roiClientRequiredPls,
         roiClientMeets,
     } = useDAvContract();
-    const { CalculationOfCost, TotalCost, getAirdropAmount, getInputAmount, getOutPutAmount } = useSwapContract();
+    const { CalculationOfCost, getAirdropAmount, getInputAmount, getOutPutAmount } = useSwapContract();
+    const TotalCost = useAuctionStore(state => state.TotalCost);
     // Optimized: Use store for static price data
     const pstateToPlsRatio = useTokenStore(state => state.pstateToPlsRatio);
     const DaipriceChange = useTokenStore(state => state.DaipriceChange);
@@ -88,25 +89,25 @@ const AuctionSection = () => {
 
     const davVariantInfo = useMemo(() => ({
         DAV1: {
-            label: `JP Morgain (${getDavSymbol('DAV1')})`,
+            label: `Sandbox (${getDavSymbol('DAV1')})`,
             costPls: 3_000_000,
             userLimit: 2500,
             yieldPct: 30,
             comingSoon: !getDeploymentStatus(chainId, 'DAV1').ready,
         },
         DAV2: {
-            label: `GM Sachs (${getDavSymbol('DAV2')})`,
-            costPls: 3_000_000,
+            label: `JP Morgains (${getDavSymbol('DAV2')})`,
+            costPls: 5_000_000,
             userLimit: 2500,
-            yieldPct: 30,
+            yieldPct: 25,
             comingSoon: !getDeploymentStatus(chainId, 'DAV2').ready,
         },
         DAV3: {
             label: `Deutsche Bros (${getDavSymbol('DAV3')})`,
-            costPls: 3_000_000,
-            userLimit: 2500,
-            yieldPct: 30,
-            comingSoon: !getDeploymentStatus(chainId, 'DAV3').ready,
+            costPls: null,
+            userLimit: null,
+            yieldPct: null,
+            comingSoon: true,
         },
     }), [chainId, getDavSymbol]);
 
@@ -148,8 +149,8 @@ const AuctionSection = () => {
 
     const handleMint = () => {
         // Pre-validations for better UX
-        if (selectedDav !== "DAV1") {
-            notifyError("DAV 2 / DAV 3 are coming soon");
+        if (selectedDav === "DAV3") {
+            notifyError("DAV 3 is coming soon");
             return;
         }
         if (!amount || amount.trim() === "") {
@@ -200,7 +201,7 @@ const AuctionSection = () => {
         }
         CalculationOfCost(e.target.value);
     };
-    
+
     // Legacy ratio-based calculation (kept as fallback)
     const calculateTotalSum = () => {
         const tokensPls = tokens.reduce((sum, token) => {
@@ -387,8 +388,8 @@ const AuctionSection = () => {
                                     onChange={handleDavSelectChange}
                                     style={{ height: "38px", color: "#ffffff", fontWeight: 400 }}
                                 >
-                                    <option value="DAV1">{`JP Morgain (${getDavSymbol('DAV1')})`}</option>
-                                    <option value="DAV2">{`GM Sachs (${getDavSymbol('DAV2')}) (Coming Soon)`}</option>
+                                    <option value="DAV1">{`Sandbox (${getDavSymbol('DAV1')})`}</option>
+                                    <option value="DAV2">{`JP Morgains (${getDavSymbol('DAV2')})`}</option>
                                     <option value="DAV3">{`Deutsche Bros (${getDavSymbol('DAV3')}) (Coming Soon)`}</option>
                                 </select>
                                 <label htmlFor="davSelect" className="floating-label">

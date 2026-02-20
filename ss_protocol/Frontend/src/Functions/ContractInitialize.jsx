@@ -1,20 +1,119 @@
 import { ethers } from "ethers";
-import { createContext, useEffect, useState, useMemo } from "react";
+import { createContext, useEffect, useState, useMemo, useRef } from "react";
 // Import ABIs to re-instantiate contracts at resolved on-chain addresses (fresh)
 import DavTokenABI from "../ABI/DavToken.json";
 import StateTokenABI from "../ABI/StateToken.json";
 import PropTypes from "prop-types";
 import {
   getContractConfigs,
-  setChainId,
   isChainSupported,
 } from "../Constants/ContractConfig";
 import { CHAIN_IDS, getContractAddresses } from "../Constants/ContractAddresses";
 import { useAccount, useChainId, useWalletClient } from "wagmi";
 import { getRuntimeConfigSync, setRuntimeSelection } from "../Constants/RuntimeConfig";
 import { useDeploymentStore } from "../stores";
+import { clearAllContractCache, clearAllPendingRequests } from "../utils/contractCache";
 
 const ContractContext = createContext(null);
+
+const normalizeAddressSafe = (value) => {
+  try {
+    return ethers.getAddress(value);
+  } catch {
+    return value;
+  }
+};
+
+const buildViewMethodSet = (abi) => {
+  try {
+    const iface = new ethers.Interface(abi);
+    const methods = new Set();
+    for (const fragment of iface.fragments || []) {
+      if (fragment?.type !== "function") continue;
+      if (fragment.stateMutability === "view" || fragment.stateMutability === "pure") {
+        if (fragment.name) methods.add(fragment.name);
+      }
+    }
+    return methods;
+  } catch {
+    return new Set();
+  }
+};
+
+const bindContractMethod = (method, targetContract) => {
+  if (typeof method !== "function") return method;
+
+  const bound = method.bind(targetContract);
+  const helperMethods = [
+    "staticCall",
+    "send",
+    "estimateGas",
+    "populateTransaction",
+    "staticCallResult",
+  ];
+
+  for (const helper of helperMethods) {
+    try {
+      if (typeof method[helper] === "function") {
+        bound[helper] = method[helper].bind(method);
+      }
+    } catch {
+      // ignore helper assignment failures
+    }
+  }
+
+  return bound;
+};
+
+const createHybridContract = ({ address, abi, readRunner, writeRunner }) => {
+  if (!address || !abi || !readRunner) return null;
+
+  const normalizedAddress = normalizeAddressSafe(address);
+  const readContract = new ethers.Contract(normalizedAddress, abi, readRunner);
+  const safeWriteRunner = writeRunner || readRunner;
+  const writeContract = new ethers.Contract(normalizedAddress, abi, safeWriteRunner);
+  const viewMethods = buildViewMethodSet(abi);
+
+  return new Proxy(writeContract, {
+    get(target, prop, receiver) {
+      if (prop === "runner") return readContract.runner;
+
+      if (prop === "connect") {
+        return (nextRunner) => {
+          const isSigner = !!nextRunner && typeof nextRunner.sendTransaction === "function";
+          return createHybridContract({
+            address: normalizedAddress,
+            abi,
+            readRunner: isSigner ? readRunner : (nextRunner || readRunner),
+            writeRunner: isSigner ? nextRunner : safeWriteRunner,
+          });
+        };
+      }
+
+      if (prop === "getFunction") {
+        return (fn) => {
+          try {
+            const fragment = writeContract.interface.getFunction(fn);
+            const isView = fragment?.stateMutability === "view" || fragment?.stateMutability === "pure";
+            return isView ? readContract.getFunction(fn) : writeContract.getFunction(fn);
+          } catch {
+            return writeContract.getFunction(fn);
+          }
+        };
+      }
+
+      if (typeof prop === "string" && viewMethods.has(prop)) {
+        const readValue = readContract[prop];
+        if (typeof readValue === "function") return bindContractMethod(readValue, readContract);
+        return readValue;
+      }
+
+      const writeValue = Reflect.get(target, prop, receiver);
+      if (typeof writeValue === "function") return bindContractMethod(writeValue, target);
+      return writeValue;
+    },
+  });
+};
 
 export const ContractProvider = ({ children }) => {
   ContractProvider.propTypes = {
@@ -32,6 +131,7 @@ export const ContractProvider = ({ children }) => {
   const [signer, setSigner] = useState(null);
   const [account, setAccount] = useState(null);
   const [AllContracts, setContracts] = useState({});
+  const initRequestRef = useRef(0);
 
   useEffect(() => {
     hydrateSelectedDavId();
@@ -51,15 +151,20 @@ export const ContractProvider = ({ children }) => {
     if (!isChainSupported(chainId)) {
       console.warn(`Connected chain ${chainId} is not supported. Using configured runtime chain ${desiredChainId}.`);
     }
-    setChainId(desiredChainId);
-
-    initializeContracts();
+    initializeContracts({
+      activeChainId: desiredChainId,
+      davId: selectedDavId || 'DAV1',
+    });
     // Re-init on wallet connect/disconnect, chain changes, or wallet client changes
   }, [isConnected, address, chainId, walletClient, selectedDavId, hydrateSelectedDavId]);
-  const initializeContracts = async () => {
+  const initializeContracts = async ({ activeChainId, davId }) => {
+    const requestId = ++initRequestRef.current;
     try {
       setLoading(true);
-  // Resolve a reliable read RPC URL from runtime config
+      // Clear stale contract cache from previous deployment/chain
+      clearAllContractCache();
+      clearAllPendingRequests();
+      // Resolve a reliable read RPC URL from runtime config
       const runtimeCfg = getRuntimeConfigSync();
       const fallbackRpcUrl = runtimeCfg?.network?.rpcUrl || "https://rpc.pulsechain.com";
 
@@ -91,18 +196,25 @@ export const ContractProvider = ({ children }) => {
       const readOnlyProvider = new ethers.JsonRpcProvider(fallbackRpcUrl);
 
       // Determine the active chain we intend to use for contracts (strictly selected chain)
-      const activeChainId = isChainSupported(chainId)
-        ? chainId
-        : Number(runtimeCfg?.selection?.chainId || CHAIN_IDS.PULSECHAIN);
+      const effectiveChainId = Number(activeChainId || runtimeCfg?.selection?.chainId || CHAIN_IDS.PULSECHAIN);
+      const effectiveDavId = String(davId || 'DAV1').toUpperCase();
 
-      // Only use signer for contracts if the wallet is on the active chain; otherwise use read-only provider
-      const execProvider = (signer && chainId === activeChainId) ? signer : readOnlyProvider;
+      // Keep signer for writes only when wallet is on the active chain
+      const writeRunner = (signer && chainId === effectiveChainId) ? signer : null;
 
       const contractInstances = Object.fromEntries(
-        Object.entries(getContractConfigs()).map(([key, { address, abi }]) => {
+        Object.entries(getContractConfigs(effectiveChainId, effectiveDavId)).map(([key, { address, abi }]) => {
           if (!address) return [key, null];
           try {
-            return [key, new ethers.Contract(address, abi, execProvider)];
+            return [
+              key,
+              createHybridContract({
+                address,
+                abi,
+                readRunner: readOnlyProvider,
+                writeRunner,
+              }),
+            ];
           } catch (e) {
             console.warn(`Contract init failed for ${key} at ${address}`);
             return [key, null];
@@ -121,29 +233,32 @@ export const ContractProvider = ({ children }) => {
           ]);
 
           if (onChainDav && ethers.isAddress(onChainDav)) {
-            contractInstances.davContract = new ethers.Contract(
-              onChainDav,
-              DavTokenABI,
-              execProvider
-            );
+            contractInstances.davContract = createHybridContract({
+              address: onChainDav,
+              abi: DavTokenABI,
+              readRunner: readOnlyProvider,
+              writeRunner,
+            });
             // Stash resolved address for consumers that need raw values
             contractInstances._davAddress = onChainDav;
           }
           if (onChainState && ethers.isAddress(onChainState)) {
-            contractInstances.stateContract = new ethers.Contract(
-              onChainState,
-              StateTokenABI,
-              execProvider
-            );
+            contractInstances.stateContract = createHybridContract({
+              address: onChainState,
+              abi: StateTokenABI,
+              readRunner: readOnlyProvider,
+              writeRunner,
+            });
             contractInstances._stateAddress = onChainState;
           }
           if (onChainAirdrop && ethers.isAddress(onChainAirdrop) && onChainAirdrop !== ethers.ZeroAddress) {
             // Prefer the distributor address configured on-chain over static config
-            contractInstances.airdropDistributor = new ethers.Contract(
-              onChainAirdrop,
-              (await import("../ABI/AirdropDistributor.json")).default,
-              execProvider
-            );
+            contractInstances.airdropDistributor = createHybridContract({
+              address: onChainAirdrop,
+              abi: (await import("../ABI/AirdropDistributor.json")).default,
+              readRunner: readOnlyProvider,
+              writeRunner,
+            });
             contractInstances._airdropDistributorAddress = onChainAirdrop;
           } else if (contractInstances.airdropDistributor) {
             // Keep the static config instance if on-chain resolution failed
@@ -162,16 +277,19 @@ export const ContractProvider = ({ children }) => {
           state: contractInstances?.stateContract?.target,
           mode: signer ? "signer" : "read-only",
         });
-      } catch {}
+      } catch { }
 
-  // Expose the read-only provider for consistent reads (even if a signer exists on another chain)
-  setProvider(readOnlyProvider);
+      // Expose the read-only provider for consistent reads (even if a signer exists on another chain)
+      if (requestId !== initRequestRef.current) return;
+      setProvider(readOnlyProvider);
       setSigner(signer || null);
       setAccount(userAddress || null);
       setContracts(contractInstances);
     } catch (err) {
+      if (requestId !== initRequestRef.current) return;
       console.error("Failed to initialize contracts:", err);
     } finally {
+      if (requestId !== initRequestRef.current) return;
       setLoading(false);
     }
   };

@@ -16,7 +16,7 @@ let lastActivityTime = Date.now();
 
 // Configuration
 const IDLE_TIMEOUT = 30000; // Consider user idle after 30 seconds of no activity
-const ACTIVITY_EVENTS = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
+const ACTIVITY_EVENTS = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
 
 // Track all active pollers for global pause/resume
 const activePollers = new Set();
@@ -31,7 +31,7 @@ function initializeListeners() {
   // Visibility change listener
   document.addEventListener('visibilitychange', () => {
     isTabVisible = !document.hidden;
-    
+
     if (isTabVisible) {
       // Tab became visible - resume all pollers immediately
       activePollers.forEach(poller => poller.onVisible());
@@ -46,7 +46,7 @@ function initializeListeners() {
     lastActivityTime = Date.now();
     const wasIdle = !isUserActive;
     isUserActive = true;
-    
+
     if (wasIdle) {
       // User became active - speed up polling
       activePollers.forEach(poller => poller.onActive());
@@ -100,7 +100,7 @@ export function createSmartPoller(fetchFn, options = {}) {
 
   const poller = {
     name,
-    
+
     async fetch() {
       if (!isMounted || !isRunning) return;
       try {
@@ -113,7 +113,7 @@ export function createSmartPoller(fetchFn, options = {}) {
     setInterval(interval) {
       if (currentInterval === interval) return;
       currentInterval = interval;
-      
+
       if (intervalId) {
         clearInterval(intervalId);
         intervalId = setInterval(() => this.fetch(), currentInterval);
@@ -155,13 +155,13 @@ export function createSmartPoller(fetchFn, options = {}) {
       isRunning = true;
       isMounted = true;
       activePollers.add(this);
-      
+
       currentInterval = isUserActive ? activeInterval : idleInterval;
-      
+
       if (fetchOnStart) {
         this.fetch();
       }
-      
+
       if (isTabVisible) {
         intervalId = setInterval(() => this.fetch(), currentInterval);
       }
@@ -171,7 +171,7 @@ export function createSmartPoller(fetchFn, options = {}) {
       isRunning = false;
       isMounted = false;
       activePollers.delete(this);
-      
+
       if (intervalId) {
         clearInterval(intervalId);
         intervalId = null;
@@ -208,7 +208,7 @@ export function useSmartPolling(fetchFn, deps = [], options = {}) {
   //   poller.start();
   //   return () => poller.stop();
   // }, [deps]);
-  
+
   throw new Error('useSmartPolling should be used inside a React component with useEffect. Use createSmartPoller directly for non-React code.');
 }
 

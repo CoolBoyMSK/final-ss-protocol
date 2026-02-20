@@ -252,7 +252,7 @@ export default function TokenManagementPage() {
       alert(`Create pool tx: ${tx.hash}`);
       await tx.wait();
       await refreshTokens();
-      setPoolForm({ token: "", tokenAmount: "", stateAmount: "" });
+      setPoolForm({ token: "", tokenAmount: "10000", stateAmount: "1000000" });
     } catch (err) {
       alert(err.message || "Failed to create pool");
     } finally {

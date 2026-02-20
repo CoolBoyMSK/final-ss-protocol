@@ -16,8 +16,8 @@ const DAV_VAULT_NETWORKS = [
 const DAV_VAULT_DAVS = ["DAV1", "DAV2", "DAV3"];
 
 const DAV_VAULT_DAV_LABELS = {
-  DAV1: "JP Morgain (DAV1)",
-  DAV2: "GM Sachs (DAV2)",
+  DAV1: "Sandbox (DAV1)",
+  DAV2: "JP Morgains (DAV2)",
   DAV3: "Deutsche Bros (DAV3)",
 };
 

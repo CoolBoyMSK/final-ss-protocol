@@ -263,7 +263,7 @@ contract SWAP_V3 is Ownable, ReentrancyGuard, SwapErrors, SwapEvents {
     /**
      * @notice Normal Auction Step 2 - Burn auction tokens to receive STATE tokens
      * @dev User must have completed Step 1 (claim airdrop via DAV). Multiple burns allowed per cycle.
-     * @custom:burn User burns 30% of airdrop tokens (e.g., 3000 from 10K airdrop per 1 DAV)
+    * @custom:burn User burns 25% of airdrop tokens (e.g., 2500 from 10K airdrop per 1 DAV)
      * @custom:reward Receives 2x STATE tokens based on pool ratio
      * @custom:fee 0.5% auction fee deducted from STATE output
      * @custom:requirement Minimum 1 DAV balance, Step 1 completed, sufficient auction token balance

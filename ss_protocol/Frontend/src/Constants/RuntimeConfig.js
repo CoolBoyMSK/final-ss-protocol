@@ -40,7 +40,27 @@ const DEFAULT_REGISTRY = {
       symbolPrefix: 'p',
       rpcUrl: 'https://rpc.pulsechain.com',
       explorerUrl: 'https://scan.pulsechain.com',
-      deployments: { DAV1: { contracts: DEFAULTS.contracts, dex: DEFAULTS.dex } }
+      deployments: {
+        DAV1: { contracts: DEFAULTS.contracts, dex: DEFAULTS.dex },
+        DAV2: {
+          contracts: {
+            core: {
+              SWAP_V3: { address: '0x0246Ee42982B0ee671Ec0C007dE366c1c8F4Cf30' },
+              STATE_V3: { address: '0xD46DB85d2fBe4e99f88Ca44c84B04F96D0F8e247', symbol: 'pSTATE2', name: 'PulseSTATE2', decimals: 18 },
+              DAV_V3: { address: '0x29637505477e9B688628eA1F6269b6971f5869d5', symbol: 'pDAV2', name: 'PulseDAV2', decimals: 18 },
+            },
+            support: {
+              SwapLens: { address: '0x01408f83FF10bBA51807418be80E6EA70a91AA4d' },
+              BuyAndBurnController: { address: '0x864507B2994353F10a11AAe50bba82f154293f26' }
+            },
+            stages: {
+              AirdropDistributor: { address: '0xb797Af3b96f3DF9A8c58d15246370cbbb0f1844d' },
+              AuctionAdmin: { address: '0x4E2b1e68E7aEE55ec14c6e9be9438CA8f561a6c8' }
+            },
+          },
+          dex: DEFAULTS.dex,
+        },
+      }
     }
   }
 };

@@ -4,7 +4,7 @@ import "../Styles/SearchInfo.css";
 import MetaMaskIcon from "../assets/metamask-icon.png";
 import gecko from "../assets/gecko.svg";
 import { useSwapContract } from "../Functions/SwapContractFunctions";
-import { useTokenStore } from "../stores";
+import { useDeploymentStore, useTokenStore, useUserStore } from "../stores";
 import PropTypes from "prop-types";
 import { useContext, useEffect, useState, useMemo, useCallback, memo, useRef } from "react";
 import { TokensDetails } from "../data/TokensDetails";
@@ -75,7 +75,7 @@ const TokenRow = memo(({
       : token.tokenName === "STATE"
         ? (chainId === 137 ? "mSTATE" : "pSTATE")
         : token.tokenName;
-    
+
     console.log("handleAddTokenClick called:", {
       address: token.TokenAddress,
       symbol: symbol,
@@ -578,10 +578,11 @@ const DetailsInfoFull = ({ selectedToken }) => {
   const {
     setDavAndStateIntoSwap,
     handleAddToken,
-    DavAddress,
   } = useSwapContract();
+  const DavAddress = useUserStore(state => state.DavAddress);
 
   const chainId = useChainId();
+  const selectedDavId = useDeploymentStore((state) => state.selectedDavId);
   const { totalStateBurned } = useDAvContract();
   const { poolAddress: statePoolAddress } = useStatePoolAddress(); // Called once here, passed to all rows
   const [localSearchQuery, setLocalSearchQuery] = useState("");
@@ -598,6 +599,9 @@ const DetailsInfoFull = ({ selectedToken }) => {
       stableTokensRef.current = rawTokens;
     }
   }, [rawTokens]);
+  useEffect(() => {
+    stableTokensRef.current = [];
+  }, [chainId, selectedDavId]);
   const tokens = useMemo(() => {
     if (Array.isArray(rawTokens) && rawTokens.length > 0) return rawTokens;
     return stableTokensRef.current;
@@ -759,10 +763,10 @@ const DetailsInfoFull = ({ selectedToken }) => {
                       <span style={{ position: 'relative' }}>
                         {`${totalSum} ${nativeSymbol}`}
                         {isCalculating && (
-                          <span 
-                            style={{ 
-                              marginLeft: '4px', 
-                              fontSize: '0.7em', 
+                          <span
+                            style={{
+                              marginLeft: '4px',
+                              fontSize: '0.7em',
                               opacity: 0.6,
                               animation: 'pulse 1s infinite'
                             }}
@@ -847,6 +851,7 @@ const DetailsInfoInfoPage = ({ selectedToken }) => {
   const pstateToPlsRatio = useTokenStore(state => state.pstateToPlsRatio);
   const { handleAddToken } = useSwapContract();
   const chainId = useChainId();
+  const selectedDavId = useDeploymentStore((state) => state.selectedDavId);
   const [localSearchQuery, setLocalSearchQuery] = useState("");
   const { tokens: rawTokens, loading, refetch } = TokensDetails();
   const { signer } = useContext(ContractContext);
@@ -860,6 +865,9 @@ const DetailsInfoInfoPage = ({ selectedToken }) => {
       stableTokensRef.current = rawTokens;
     }
   }, [rawTokens]);
+  useEffect(() => {
+    stableTokensRef.current = [];
+  }, [chainId, selectedDavId]);
   const tokens = useMemo(() => {
     if (Array.isArray(rawTokens) && rawTokens.length > 0) return rawTokens;
     return stableTokensRef.current;
@@ -1013,7 +1021,7 @@ const DetailsInfoInfoPage = ({ selectedToken }) => {
                       showDot={false}
                       handleAddToken={handleAddToken}
                       DavAddress={""}
-                      setDavAndStateIntoSwap={() => {}}
+                      setDavAndStateIntoSwap={() => { }}
                       nativeSymbol={nativeSymbol}
                       explorerUrl={explorerUrl}
                       combinedDeployedLP={0}

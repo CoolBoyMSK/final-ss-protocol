@@ -61,6 +61,37 @@ const AIRDROP_MIN_ABI = [
   {"type":"function","name":"setConsumer","inputs":[{"name":"consumer","type":"address"},{"name":"allowed","type":"bool"}],"outputs":[],"stateMutability":"nonpayable"}
 ];
 
+const buildContractConfigsFromAddresses = (addresses) => ({
+	davContract: {
+		address: addresses.DAV_TOKEN,
+		abi: DavTokenABI.abi || DavTokenABI
+	},
+	AuctionContract: {
+		address: addresses.AUCTION,
+		abi: AuctionSwapABI.abi || AuctionSwapABI
+	},
+	stateContract: {
+		address: addresses.STATE_TOKEN,
+		abi: StateTokenABI.abi || StateTokenABI
+	},
+	swapLens: {
+		address: addresses.SWAP_LENS,
+		abi: SwapLensABI.abi || SwapLensABI || SWAP_LENS_MIN_ABI,
+	},
+  buyBurnController: {
+    address: addresses.BUY_BURN_CONTROLLER,
+    abi: BUY_BURN_MIN_ABI,
+  },
+	airdropDistributor: {
+		address: addresses.AIRDROP_DISTRIBUTOR,
+		abi: AirdropDistributorABI.abi || AirdropDistributorABI,
+	},
+	auctionAdmin: {
+		address: addresses.AUCTION_ADMIN,
+		abi: AuctionAdminABI.abi || AuctionAdminABI,
+	},
+});
+
 let currentChainId = CHAIN_IDS.PULSECHAIN; // Default chainId
 
 export const setChainId = (chainId) => {
@@ -71,76 +102,16 @@ export const getCurrentChainId = () => {
 	return currentChainId;
 };
 
-// Get contract configs for the current chain
-export const getContractConfigs = () => {
-	const addresses = getContractAddresses(currentChainId);
-	
-	return {
-		davContract: { 
-			address: addresses.DAV_TOKEN, 
-			abi: DavTokenABI.abi || DavTokenABI 
-		},
-		AuctionContract: { 
-			address: addresses.AUCTION, 
-			abi: AuctionSwapABI.abi || AuctionSwapABI
-		},
-		stateContract: { 
-			address: addresses.STATE_TOKEN, 
-			abi: StateTokenABI.abi || StateTokenABI 
-		},
-		swapLens: {
-			address: addresses.SWAP_LENS,
-			abi: SwapLensABI.abi || SwapLensABI || SWAP_LENS_MIN_ABI,
-		},
-    buyBurnController: {
-      address: addresses.BUY_BURN_CONTROLLER,
-      abi: BUY_BURN_MIN_ABI,
-    },
-		airdropDistributor: {
-			address: addresses.AIRDROP_DISTRIBUTOR,
-			abi: AirdropDistributorABI.abi || AirdropDistributorABI,
-		},
-		auctionAdmin: {
-			address: addresses.AUCTION_ADMIN,
-			abi: AuctionAdminABI.abi || AuctionAdminABI,
-		},
-	};
+// Get contract configs for the active selection
+export const getContractConfigs = (chainId = currentChainId, davId) => {
+	const addresses = getContractAddresses(chainId, davId);
+	return buildContractConfigsFromAddresses(addresses);
 };
 
 // Get contract configs for a specific chain
-export const getContractConfigsForChain = (chainId) => {
-	const addresses = getContractAddresses(chainId);
-	
-	return {
-		davContract: { 
-			address: addresses.DAV_TOKEN, 
-			abi: DavTokenABI.abi || DavTokenABI 
-		},
-		AuctionContract: { 
-			address: addresses.AUCTION, 
-			abi: AuctionSwapABI.abi || AuctionSwapABI
-		},
-		stateContract: { 
-			address: addresses.STATE_TOKEN, 
-			abi: StateTokenABI.abi || StateTokenABI 
-		},
-		swapLens: {
-			address: addresses.SWAP_LENS,
-			abi: SwapLensABI.abi || SwapLensABI || SWAP_LENS_MIN_ABI,
-		},
-    buyBurnController: {
-      address: addresses.BUY_BURN_CONTROLLER,
-      abi: BUY_BURN_MIN_ABI,
-    },
-		airdropDistributor: {
-			address: addresses.AIRDROP_DISTRIBUTOR,
-			abi: AirdropDistributorABI.abi || AirdropDistributorABI,
-		},
-		auctionAdmin: {
-			address: addresses.AUCTION_ADMIN,
-			abi: AuctionAdminABI.abi || AuctionAdminABI,
-		},
-	};
+export const getContractConfigsForChain = (chainId, davId) => {
+	const addresses = getContractAddresses(chainId, davId);
+	return buildContractConfigsFromAddresses(addresses);
 };
 
 // Check if a chain is supported

@@ -10,6 +10,17 @@
 
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
+import { setRuntimeSelection } from '../Constants/RuntimeConfig';
+
+const resolveInitialDavId = () => {
+  try {
+    const saved = localStorage.getItem('selectedDavId');
+    const normalized = String(saved || 'DAV1').toUpperCase();
+    return ['DAV1', 'DAV2', 'DAV3'].includes(normalized) ? normalized : 'DAV1';
+  } catch {
+    return 'DAV1';
+  }
+};
 
 // ============================================
 // AUCTION STORE - Auction timing and phase data
@@ -26,19 +37,22 @@ export const useAuctionStore = create(
     auctionDuration: null,
     auctionInterval: null,
     chainTimeSkew: 0,
-    
+
     // Auction status
     IsAuctionActive: {}, // Context compatibility
     isReversed: {},
-    
+
     // Input/output amounts
     InputAmount: {},
     OutPutAmount: {},
-    
+
     // Airdrop
     AirDropAmount: {},
     CurrentCycleCount: {},
-    
+
+    // Cost calculation
+    TotalCost: null,
+
     // Today's token
     todayToken: '',
     todayTokenAddress: '',
@@ -51,7 +65,7 @@ export const useAuctionStore = create(
     isReverse: null,
     duration: null,
     interval: null,
-    
+
     // Actions
     setAuctionTime: (time) => set({ auctionTime: time }),
     setAuctionPhase: (phase) => set({ auctionPhase: phase }),
@@ -68,7 +82,7 @@ export const useAuctionStore = create(
       todayTokenDecimals: data.decimals || 18,
     }),
     setReverseWindowActive: (active) => set({ reverseWindowActive: active }),
-    
+
     // Batch update for efficiency (critical for context sync)
     setBatch: (data) => set((state) => ({ ...state, ...data })),
     updateAuctionData: (data) => set((state) => ({ ...state, ...data })),
@@ -85,7 +99,7 @@ export const useTokenStore = create(
     TokenNames: [], // Alias for context compatibility
     tokenMap: {},
     allTokens: [],
-    
+
     // Balances and amounts (use both casing for compatibility)
     tokenBalance: {},
     TokenBalance: {}, // Alias for context compatibility
@@ -93,7 +107,7 @@ export const useTokenStore = create(
     stateBalance: '',
     inputAmount: {},
     outputAmount: {},
-    
+
     // Token status (use both casing for compatibility)
     tokenRatio: {},
     TokenRatio: {}, // Alias for context compatibility
@@ -106,23 +120,23 @@ export const useTokenStore = create(
     renounceStatus: {},
     isAuctionActive: {},
     isReversed: {},
-    
+
     // Pair addresses
     tokenPairAddress: {},
     pairAddresses: {},
     currentCycleCount: {},
-    
+
     // Ratio targets
     RatioTargetsofTokens: {},
-    
+
     // Supported token state
     supportedToken: {},
     TimeLeftClaim: {},
-    
+
     // Price data (use both casing for compatibility)
     pstateToPlsRatio: '0.0',
     DaipriceChange: '', // Alias for context compatibility (empty until live fetch)
-    
+
     // Actions
     setTokenNames: (names) => set({ tokenNames: names }),
     setTokenMap: (map) => set({ tokenMap: map }),
@@ -140,11 +154,11 @@ export const useTokenStore = create(
     setCurrentCycleCount: (count) => set({ currentCycleCount: count }),
     setPstateToPlsRatio: (ratio) => set({ pstateToPlsRatio: ratio }),
     setDaiPriceChange: (change) => set({ daiPriceChange: change }),
-    
+
     // Batch update (critical for context sync)
     setBatch: (data) => set((state) => ({ ...state, ...data })),
     updateTokenData: (data) => set((state) => ({ ...state, ...data })),
-    
+
     // Update single token's data
     updateSingleToken: (tokenName, data) => set((state) => {
       const updates = {};
@@ -169,7 +183,7 @@ export const useUserStore = create(
   subscribeWithSelector((set, get) => ({
     // User address
     address: '',
-    
+
     // User swap status (use casing compatible with context)
     userHashSwapped: {},
     userHasSwapped: {},
@@ -181,24 +195,26 @@ export const useUserStore = create(
     AirdropClaimed: {}, // Alias for context compatibility
     userHasAirdropClaimed: {},
     timeLeftClaim: {},
-    
+
     // Reverse state tracking
     reverseStateMap: {},
-    
+
     // Supported tokens
     supportedToken: false,
     usersSupportedTokens: '',
     UsersSupportedTokens: '', // Alias for context compatibility
-    
+
     // Contract addresses (user-specific context)
     davAddress: '',
+    DavAddress: '', // Alias for context compatibility
     stateAddress: '',
-    
+    StateAddress: '', // Alias for context compatibility
+
     // User balances
     plsBalance: '0',
     wpls_Balance: '0',
     state_Balance: '0',
-    
+
     // DAV-related user data
     davBalance: '0',
     davHolds: '0',
@@ -211,7 +227,7 @@ export const useUserStore = create(
     roiMeets: 'false',
     totalInvestedPls: '0',
     isClaimProcessing: null,
-    
+
     // Actions
     setUserHashSwapped: (swapped) => set({ userHashSwapped: swapped }),
     setUserHasBurned: (burned) => set({ userHasBurned: burned }),
@@ -225,11 +241,11 @@ export const useUserStore = create(
     setUsersSupportedTokens: (tokens) => set({ usersSupportedTokens: tokens }),
     setDavAddress: (address) => set({ davAddress: address }),
     setStateAddress: (address) => set({ stateAddress: address }),
-    
+
     // Batch update (critical for context sync)
     setBatch: (data) => set((state) => ({ ...state, ...data })),
     updateUserData: (data) => set((state) => ({ ...state, ...data })),
-    
+
     // Update status for specific token
     updateTokenStatus: (tokenName, status) => set((state) => {
       const updates = {};
@@ -247,7 +263,7 @@ export const useUserStore = create(
       }
       return updates;
     }),
-    
+
     // Clear user data on disconnect
     clearUserData: () => set({
       userHashSwapped: {},
@@ -272,20 +288,20 @@ export const useUIStore = create((set) => ({
   claiming: false,
   isClaimProcessing: null,
   isCliamProcessing: null, // Alias for typo in original code
-  
+
   // Button states
   buttonTextStates: {},
   dexButtonTextStates: {},
   swappingStates: {},
   dexSwappingStates: {},
   DexswappingStates: {}, // Alias for context compatibility
-  
+
   // Transaction status
   txStatusForSwap: '',
   txStatusForAdding: '',
   txHash: '',
   swapLoading: false,
-  
+
   // Actions
   setLoading: (loading) => set({ loading, isLoading: loading }),
   setClaiming: (claiming) => set({ claiming }),
@@ -296,10 +312,10 @@ export const useUIStore = create((set) => ({
   setDexSwappingStates: (states) => set({ dexSwappingStates: states }),
   setTxStatusForSwap: (status) => set({ txStatusForSwap: status }),
   setTxStatusForAdding: (status) => set({ txStatusForAdding: status }),
-  
+
   // Batch update (critical for context sync)
   setBatch: (data) => set((state) => ({ ...state, ...data })),
-  
+
   // Update button state for specific token
   setButtonState: (tokenName, state) => set((prev) => ({
     buttonTextStates: { ...prev.buttonTextStates, [tokenName]: state },
@@ -324,19 +340,19 @@ export const useDavStore = create(
     davMintFee: 0n,
     totalInvestedPls: 0n,
     referralCodeOfUser: '',
-    
+
     // ROI data
     roiTotalValuePls: 0n,
     roiRequiredValuePls: 0n,
     roiMeets: false,
     roiPercentage: 0,
-    
+
     // Client ROI fallback
     roiClientPercentage: 0,
     roiClientTotalPls: 0n,
     roiClientRequiredPls: 0n,
     roiClientMeets: false,
-    
+
     // Actions
     setDavHolds: (holds) => set({ davHolds: holds }),
     setDavExpireHolds: (holds) => set({ davExpireHolds: holds }),
@@ -347,7 +363,7 @@ export const useDavStore = create(
     setDavMintFee: (fee) => set({ davMintFee: fee }),
     setTotalInvestedPls: (invested) => set({ totalInvestedPls: invested }),
     setReferralCodeOfUser: (code) => set({ referralCodeOfUser: code }),
-    
+
     // ROI updates
     updateRoiData: (data) => set({
       roiTotalValuePls: data.totalValuePls ?? 0n,
@@ -355,10 +371,10 @@ export const useDavStore = create(
       roiMeets: data.meets ?? false,
       roiPercentage: data.percentage ?? 0,
     }),
-    
+
     // Batch update
     updateDavData: (data) => set((state) => ({ ...state, ...data })),
-    
+
     // Clear on disconnect
     clearDavData: () => set({
       davHolds: 0n,
@@ -376,15 +392,18 @@ export const useDavStore = create(
 // ============================================
 export const useDeploymentStore = create(
   subscribeWithSelector((set) => ({
-    selectedDavId: 'DAV1',
+    selectedDavId: resolveInitialDavId(),
 
     setSelectedDavId: (davId) => {
       const normalized = String(davId || 'DAV1').toUpperCase();
       const safeDav = ['DAV1', 'DAV2', 'DAV3'].includes(normalized) ? normalized : 'DAV1';
       set({ selectedDavId: safeDav });
       try {
+        setRuntimeSelection({ davId: safeDav });
+      } catch { }
+      try {
         localStorage.setItem('selectedDavId', safeDav);
-      } catch {}
+      } catch { }
     },
 
     hydrateSelectedDavId: () => {
@@ -393,8 +412,14 @@ export const useDeploymentStore = create(
         const normalized = String(saved || 'DAV1').toUpperCase();
         const safeDav = ['DAV1', 'DAV2', 'DAV3'].includes(normalized) ? normalized : 'DAV1';
         set({ selectedDavId: safeDav });
+        try {
+          setRuntimeSelection({ davId: safeDav });
+        } catch { }
       } catch {
         set({ selectedDavId: 'DAV1' });
+        try {
+          setRuntimeSelection({ davId: 'DAV1' });
+        } catch { }
       }
     },
   }))
@@ -405,11 +430,11 @@ export const useDeploymentStore = create(
 // ============================================
 
 // Get only auction time for a specific token
-export const selectAuctionTimeForToken = (tokenName) => (state) => 
+export const selectAuctionTimeForToken = (tokenName) => (state) =>
   state.auctionTime[tokenName];
 
 // Get only balance for a specific token
-export const selectTokenBalance = (tokenName) => (state) => 
+export const selectTokenBalance = (tokenName) => (state) =>
   state.tokenBalance[tokenName];
 
 // Get user's swap status for a specific token

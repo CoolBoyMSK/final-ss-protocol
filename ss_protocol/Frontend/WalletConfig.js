@@ -1,6 +1,6 @@
 import { createAppKit } from "@reown/appkit/react";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
-import { avalanche, pulsechain, bsc, mainnet, sonic } from "@reown/appkit/networks";
+import { pulsechain, sonic, polygon } from "@reown/appkit/networks";
 import { QueryClient } from "@tanstack/react-query";
 
 // 0. Setup queryClient with optimized memory settings
@@ -28,7 +28,7 @@ const projectId = import.meta.env.VITE_REOWN_PROJECT_ID;
 if (!projectId) throw new Error("Reown projectId is not defined");
 
 // 3. Define networks
-const networks = [mainnet, avalanche, pulsechain, bsc, sonic];
+const networks = [pulsechain, polygon, sonic];
 
 // 4. Create Wagmi Adapter
 const wagmiAdapter = new WagmiAdapter({
@@ -59,13 +59,11 @@ try {
 
 export { wagmiAdapter, queryClient, networks };
 
-export const chains = [pulsechain, avalanche, mainnet, bsc, sonic];
+export const chains = [pulsechain, polygon, sonic];
 
 
 export const chainCurrencyMap = {
-	[avalanche.id]: avalanche.nativeCurrency.symbol,
-	[bsc.id]: bsc.nativeCurrency.symbol,
-	[sonic.id]: sonic.nativeCurrency.symbol,
 	[pulsechain.id]: pulsechain.nativeCurrency.symbol,
-	[mainnet.id]: mainnet.nativeCurrency.symbol,
+	[polygon.id]: polygon.nativeCurrency.symbol,
+	[sonic.id]: sonic.nativeCurrency.symbol,
 };

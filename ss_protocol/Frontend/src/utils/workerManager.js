@@ -24,17 +24,17 @@ const REQUEST_TIMEOUT = 30000; // 30 second timeout
  */
 function getWorker() {
   if (worker) return worker;
-  
+
   try {
     // Create worker with proper module import
     worker = new Worker(
       new URL('../workers/ammCalculator.worker.js', import.meta.url),
       { type: 'module' }
     );
-    
+
     worker.onmessage = handleWorkerMessage;
     worker.onerror = handleWorkerError;
-    
+
     console.debug('[AMM Worker] Initialized');
     return worker;
   } catch (error) {
@@ -48,19 +48,19 @@ function getWorker() {
  */
 function handleWorkerMessage(event) {
   const { type, result, error, requestId } = event.data;
-  
+
   if (type === 'WORKER_READY') {
     isReady = true;
     console.debug('[AMM Worker] Ready');
     return;
   }
-  
+
   if (type === 'AMM_RESULT' || type === 'AMM_ERROR') {
     const pending = pendingRequests.get(requestId);
     if (pending) {
       clearTimeout(pending.timeout);
       pendingRequests.delete(requestId);
-      
+
       if (type === 'AMM_ERROR') {
         pending.reject(new Error(error));
       } else {
@@ -75,14 +75,14 @@ function handleWorkerMessage(event) {
  */
 function handleWorkerError(error) {
   console.error('[AMM Worker] Error:', error);
-  
+
   // Reject all pending requests
   for (const [requestId, pending] of pendingRequests) {
     clearTimeout(pending.timeout);
     pending.reject(new Error('Worker crashed'));
   }
   pendingRequests.clear();
-  
+
   // Restart worker
   terminateWorker();
   getWorker();
@@ -106,20 +106,20 @@ export function terminateWorker() {
 export function calculateAmmValuesAsync(tokens, tokenBalances, options) {
   return new Promise((resolve, reject) => {
     const w = getWorker();
-    
+
     if (!w) {
       reject(new Error('Worker not available'));
       return;
     }
-    
+
     const requestId = ++requestIdCounter;
-    
+
     // Set timeout
     const timeout = setTimeout(() => {
       pendingRequests.delete(requestId);
       reject(new Error('AMM calculation timeout'));
     }, REQUEST_TIMEOUT);
-    
+
     // Store pending request
     pendingRequests.set(requestId, {
       resolve,
@@ -127,7 +127,7 @@ export function calculateAmmValuesAsync(tokens, tokenBalances, options) {
       timeout,
       timestamp: Date.now()
     });
-    
+
     // Send to worker
     w.postMessage({
       type: 'CALCULATE_AMM',
@@ -159,7 +159,7 @@ export function getPendingCount() {
 export function clearStaleRequests() {
   const now = Date.now();
   const staleThreshold = 60000;
-  
+
   for (const [requestId, pending] of pendingRequests) {
     if (now - pending.timestamp > staleThreshold) {
       clearTimeout(pending.timeout);
@@ -169,11 +169,8 @@ export function clearStaleRequests() {
   }
 }
 
-// Initialize worker on module load
-getWorker();
-
-// Cleanup stale requests every 30 seconds
-setInterval(clearStaleRequests, 30000);
+// Worker is lazy-initialized on first calculateAmmValuesAsync call
+// (no eager getWorker() to avoid spawning a worker before it's needed)
 
 export default {
   calculateAmmValuesAsync,

@@ -418,7 +418,8 @@ export default function GovernancePage() {
       } catch {}
       return next;
     });
-  }, [resolveContract, resolveAddress, provider, pauseStatus]);
+  // NOTE: pauseStatus intentionally excluded to avoid infinite re-render loop
+  }, [resolveContract, resolveAddress, provider]);
 
   useEffect(() => {
     fetchPauseStatus();

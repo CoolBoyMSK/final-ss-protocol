@@ -13,10 +13,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { getContractAddress, CHAIN_IDS } from '../Constants/ContractAddresses';
 import { getRuntimeConfigSync } from '../Constants/RuntimeConfig';
+import { useDeploymentStore } from '../stores';
 
 // LocalStorage keys
-const STORAGE_KEY_RESET_BLOCK = 'stateOutResetBlock';
-const STORAGE_KEY_CACHED_RESULT = 'stateOutCachedResult';
+const STORAGE_KEY_RESET_BLOCK_BASE = 'stateOutResetBlock';
+const STORAGE_KEY_CACHED_RESULT_BASE = 'stateOutCachedResult';
 
 // Default: start from ~7 days ago (faster initial load)
 // PulseChain: ~3 second blocks, 7 days = ~201,600 blocks
@@ -35,6 +36,10 @@ export function useStateOutWorker(options = {}) {
     autoStart = false,
     refreshInterval = 0
   } = options;
+  const selectedDavId = useDeploymentStore((state) => state.selectedDavId);
+
+  const storageKeyResetBlock = `${STORAGE_KEY_RESET_BLOCK_BASE}_${Number(chainId || 0)}_${String(selectedDavId || 'DAV1').toUpperCase()}`;
+  const storageKeyCachedResult = `${STORAGE_KEY_CACHED_RESULT_BASE}_${Number(chainId || 0)}_${String(selectedDavId || 'DAV1').toUpperCase()}`;
 
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -92,7 +97,7 @@ export function useStateOutWorker(options = {}) {
         setProgress(100);
         // Cache result for 30 minutes
         try {
-          localStorage.setItem(STORAGE_KEY_CACHED_RESULT, JSON.stringify({
+          localStorage.setItem(storageKeyCachedResult, JSON.stringify({
             ...workerResult,
             cachedAt: Date.now()
           }));
@@ -115,14 +120,14 @@ export function useStateOutWorker(options = {}) {
     // Load reset block from storage
     let savedResetBlock = null;
     try {
-      const saved = localStorage.getItem(STORAGE_KEY_RESET_BLOCK);
+      const saved = localStorage.getItem(storageKeyResetBlock);
       if (saved) {
         savedResetBlock = parseInt(saved, 10);
         setResetBlock(savedResetBlock);
       }
       
       // Load cached result - use if less than 30 minutes old (as initial display while recalculating)
-      const cachedResult = localStorage.getItem(STORAGE_KEY_CACHED_RESULT);
+      const cachedResult = localStorage.getItem(storageKeyCachedResult);
       if (cachedResult) {
         const parsed = JSON.parse(cachedResult);
         if (parsed.cachedAt && Date.now() - parsed.cachedAt < 30 * 60 * 1000) {
@@ -139,7 +144,7 @@ export function useStateOutWorker(options = {}) {
         workerRef.current = null;
       }
     };
-  }, [getAddresses]);
+  }, [getAddresses, storageKeyResetBlock, storageKeyCachedResult]);
 
   // Calculate STATE out
   const calculate = useCallback(async (fromBlockOverride) => {
@@ -219,7 +224,7 @@ export function useStateOutWorker(options = {}) {
       const currentBlock = parseInt(data.result, 16);
       
       // Save reset block
-      localStorage.setItem(STORAGE_KEY_RESET_BLOCK, currentBlock.toString());
+      localStorage.setItem(storageKeyResetBlock, currentBlock.toString());
       setResetBlock(currentBlock);
       
       // Clear cached result and set to 0
@@ -232,7 +237,7 @@ export function useStateOutWorker(options = {}) {
         timestamp: Date.now(),
         cachedAt: Date.now()
       };
-      localStorage.setItem(STORAGE_KEY_CACHED_RESULT, JSON.stringify(newResult));
+      localStorage.setItem(storageKeyCachedResult, JSON.stringify(newResult));
       setResult(newResult);
       
       return currentBlock;
@@ -240,15 +245,24 @@ export function useStateOutWorker(options = {}) {
       console.error('Failed to reset counter:', err);
       throw err;
     }
-  }, []);
+  }, [getAddresses, storageKeyResetBlock, storageKeyCachedResult]);
 
   // Clear reset (start from default lookback)
   const clearReset = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY_RESET_BLOCK);
-    localStorage.removeItem(STORAGE_KEY_CACHED_RESULT);
+    localStorage.removeItem(storageKeyResetBlock);
+    localStorage.removeItem(storageKeyCachedResult);
     setResetBlock(null);
     setResult(null);
-  }, []);
+  }, [storageKeyResetBlock, storageKeyCachedResult]);
+
+  useEffect(() => {
+    hasInitialized.current = false;
+    setLoading(false);
+    setProgress(0);
+    setError(null);
+    setResult(null);
+    setResetBlock(null);
+  }, [chainId, selectedDavId]);
 
   // Auto-start calculation (only once per mount)
   useEffect(() => {

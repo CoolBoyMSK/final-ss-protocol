@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { createSmartPoller } from '../../utils/smartPolling';
 import { useContractContext } from "../../Functions/useContractContext";
 import { useSwapContract } from "../../Functions/SwapContractFunctions";
 import { ethers } from "ethers";
@@ -43,7 +44,7 @@ export default function BuyBurnSetupPage() {
   const [lastUpdated, setLastUpdated] = useState(null);
   // Controller Wallet: send PLS inline input
   const [sendPlsAmount, setSendPlsAmount] = useState("");
-  
+
   // ========== NEW: Worker-based STATE Out calculation ==========
   // Uses Web Worker to scan TokensSwapped events in background
   // Only counts actual STATE payouts to users (excludes liquidity adds)
@@ -57,7 +58,7 @@ export default function BuyBurnSetupPage() {
     resetCounter: resetStateOutCounter,
     lastUpdated: stateOutLastUpdated
   } = useStateOutWorker({ chainId, autoStart: true });
-  
+
   // Derived loading state for UI
   const stateOutLoading = stateOutWorkerLoading;
 
@@ -269,17 +270,17 @@ export default function BuyBurnSetupPage() {
       const stateBalance = s?.[2];
 
       // Resolve DAV Vault STATE pool (STATE/WPLS pair as shown in DAV Vault)
-        // DAV Vault STATE/WPLS pool should always track the Buy & Burn controller's pool
-        // i.e., the "STATE coin pool" = buy-and-burn pool.
-        // Use controller poolAddress as the single source of truth for the vault's STATE pool.
-        let vaultPoolAddress = poolAddress || ethers.ZeroAddress;
-        // Optional fallback (kept for resilience): if controller not configured yet, attempt factory lookup
-        if ((!vaultPoolAddress || vaultPoolAddress === ethers.ZeroAddress) && AuctionContract && cfg?.addresses?.state) {
-          try {
-            const stateAddr = cfg.addresses.state;
-            vaultPoolAddress = await AuctionContract.getPairAddress(stateAddr).catch(() => ethers.ZeroAddress);
-          } catch {}
-        }
+      // DAV Vault STATE/WPLS pool should always track the Buy & Burn controller's pool
+      // i.e., the "STATE coin pool" = buy-and-burn pool.
+      // Use controller poolAddress as the single source of truth for the vault's STATE pool.
+      let vaultPoolAddress = poolAddress || ethers.ZeroAddress;
+      // Optional fallback (kept for resilience): if controller not configured yet, attempt factory lookup
+      if ((!vaultPoolAddress || vaultPoolAddress === ethers.ZeroAddress) && AuctionContract && cfg?.addresses?.state) {
+        try {
+          const stateAddr = cfg.addresses.state;
+          vaultPoolAddress = await AuctionContract.getPairAddress(stateAddr).catch(() => ethers.ZeroAddress);
+        } catch { }
+      }
 
       let stateDecimals = 18, wplsDecimals = 18, stateSymbol = 'STATE', wplsSymbol = 'WPLS';
       try {
@@ -293,15 +294,15 @@ export default function BuyBurnSetupPage() {
         const runner = BuyAndBurnController.runner || BuyAndBurnController.provider;
         if (stateAddr) {
           const t = new ethers.Contract(stateAddr, ercMetaAbi, runner);
-          try { stateSymbol = await t.symbol(); } catch {}
-          try { stateDecimals = Number(await t.decimals()); } catch {}
+          try { stateSymbol = await t.symbol(); } catch { }
+          try { stateDecimals = Number(await t.decimals()); } catch { }
         }
         if (wplsAddr) {
           const t = new ethers.Contract(wplsAddr, ercMetaAbi, runner);
-          try { wplsSymbol = await t.symbol(); } catch {}
-          try { wplsDecimals = Number(await t.decimals()); } catch {}
+          try { wplsSymbol = await t.symbol(); } catch { }
+          try { wplsDecimals = Number(await t.decimals()); } catch { }
         }
-      } catch {}
+      } catch { }
 
       let burnedLP = null, lpTotalSupply = null;
       if (poolAddress && poolAddress !== ethers.ZeroAddress) {
@@ -337,8 +338,9 @@ export default function BuyBurnSetupPage() {
       });
       setLastUpdated(new Date());
     } catch (e) {
-      // log and keep old status
-      console.debug('fetchPoolStatus failed:', e?.message || e);
+      // On new deployment, controller may not have pool — set error flag to avoid aggressive retries
+      console.debug('[BuyBurn] Pool status unavailable:', e?.message || e);
+      setPoolStatus(prev => ({ ...prev, error: true }));
     } finally {
       setStatusLoading(false);
     }
@@ -391,9 +393,15 @@ export default function BuyBurnSetupPage() {
   };
 
   React.useEffect(() => {
-    fetchPoolStatus();
-    const id = setInterval(fetchPoolStatus, 15000);
-    return () => clearInterval(id);
+    const poller = createSmartPoller(fetchPoolStatus, {
+      activeInterval: 30000,
+      idleInterval: 120000,
+      fetchOnStart: true,
+      fetchOnVisible: true,
+      name: 'buy-burn-pool-status'
+    });
+    poller.start();
+    return () => poller.stop();
   }, [BuyAndBurnController]);
 
   const handleSetupAllowance = async (e) => {
@@ -425,7 +433,7 @@ export default function BuyBurnSetupPage() {
 
   const handleCreatePool = async (e) => {
     e.preventDefault();
-  if (!BuyAndBurnController) return notifyError("BuyAndBurnController not available");
+    if (!BuyAndBurnController) return notifyError("BuyAndBurnController not available");
 
     let stateWei, wplsWei, plsWei;
     try {
@@ -566,7 +574,7 @@ export default function BuyBurnSetupPage() {
         const s = await BuyAndBurnController.getControllerStatus();
         plsBal = BigInt(s?.[0] ?? 0);
         wplsBal = BigInt(s?.[1] ?? 0);
-      } catch {}
+      } catch { }
 
       let tx;
       if (plsBal > 0n) {
@@ -615,438 +623,438 @@ export default function BuyBurnSetupPage() {
 
   return (
     <div className="card">
-          {/* Removed: Controller Pool Address and DAV Vault STATE/WPLS Pool UI per request */}
+      {/* Removed: Controller Pool Address and DAV Vault STATE/WPLS Pool UI per request */}
 
-          {/* Top summary: Controller Balances (left) and Pool Address (right) */}
-          <div className="row g-3 mb-3">
-            <div className="col-md-6">
-              <div className="p-3 rounded bg-secondary bg-opacity-25 h-100">
-                <div className="small text-white mb-1">Controller Balances</div>
-                <div className="d-flex flex-wrap gap-3">
-                  <div>
-                    <div className="small text-muted">PLS</div>
-                    <div className="fw-semibold">{fmtUnits(poolStatus.plsBalance, 18, 6)}</div>
+      {/* Top summary: Controller Balances (left) and Pool Address (right) */}
+      <div className="row g-3 mb-3">
+        <div className="col-md-6">
+          <div className="p-3 rounded bg-secondary bg-opacity-25 h-100">
+            <div className="small text-white mb-1">Controller Balances</div>
+            <div className="d-flex flex-wrap gap-3">
+              <div>
+                <div className="small text-muted">PLS</div>
+                <div className="fw-semibold">{fmtUnits(poolStatus.plsBalance, 18, 6)}</div>
+              </div>
+              <div>
+                <div className="small text-muted">{poolStatus.wplsSymbol}</div>
+                <div className="fw-semibold">{fmtUnits(poolStatus.wplsBalance, poolStatus.wplsDecimals, 6)}</div>
+              </div>
+              <div>
+                <div className="small text-muted">{poolStatus.stateSymbol}</div>
+                <div className="fw-semibold">{fmtUnits(poolStatus.stateBalance, poolStatus.stateDecimals, 6)}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="col-md-6">
+          <div className="p-3 rounded bg-secondary bg-opacity-25 h-100">
+            <div className="small text-white mb-1">Pool Address</div>
+            <div className="d-flex align-items-center gap-2">
+              {poolStatus?.poolAddress && poolStatus.poolAddress !== ethers.ZeroAddress ? (
+                <>
+                  <a
+                    href={`${explorerBase}/address/${poolStatus.poolAddress}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-info"
+                  >
+                    {short(poolStatus.poolAddress)}
+                  </a>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-light"
+                    onClick={() => copy(poolStatus.poolAddress, 'Pool address copied')}
+                    title="Copy address"
+                  >
+                    <i className="bi bi-files" />
+                  </button>
+                </>
+              ) : (
+                <span className="text-muted">Not created</span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {poolStatus?.poolAddress && poolStatus.poolAddress !== ethers.ZeroAddress ? (
+        <>
+          {/* Controller Wallet moved to bottom as a separate section */}
+
+          {/* KPI row: Reserves, Burned LP, and STATE Out (from DAV Vault) */}
+          <div className="row g-3">
+            <div className="col-md-3">
+              <div className="p-3 rounded bg-secondary bg-opacity-10 h-100">
+                <div className="small text-white mb-1">{poolStatus.stateSymbol} Reserve</div>
+                <div className="d-flex align-items-center gap-2">
+                  <i className="bi bi-coin text-warning" />
+                  <span className="fw-semibold">{fmtUnits(poolStatus.stateReserve, poolStatus.stateDecimals, 6)}</span>
+                </div>
+                {statePerWplsRatio && (
+                  <div className="small text-muted mt-1">
+                    1 {poolStatus.stateSymbol} ≈ {statePerWplsRatio.wplsPerState.toFixed(6)} {poolStatus.wplsSymbol}
                   </div>
-                  <div>
-                    <div className="small text-muted">{poolStatus.wplsSymbol}</div>
-                    <div className="fw-semibold">{fmtUnits(poolStatus.wplsBalance, poolStatus.wplsDecimals, 6)}</div>
+                )}
+              </div>
+            </div>
+            <div className="col-md-3">
+              <div className="p-3 rounded bg-secondary bg-opacity-10 h-100">
+                <div className="small text-white mb-1">{poolStatus.wplsSymbol} Reserve</div>
+                <div className="d-flex align-items-center gap-2">
+                  <i className="bi bi-droplet text-info" />
+                  <span className="fw-semibold">{fmtUnits(poolStatus.wplsReserve, poolStatus.wplsDecimals, 6)}</span>
+                </div>
+                {statePerWplsRatio && (
+                  <div className="small text-muted mt-1">
+                    1 {poolStatus.wplsSymbol} ≈ {statePerWplsRatio.statePerWpls.toFixed(6)} {poolStatus.stateSymbol}
                   </div>
-                  <div>
-                    <div className="small text-muted">{poolStatus.stateSymbol}</div>
-                    <div className="fw-semibold">{fmtUnits(poolStatus.stateBalance, poolStatus.stateDecimals, 6)}</div>
-                  </div>
+                )}
+              </div>
+            </div>
+            <div className="col-md-3">
+              <div className="p-3 rounded bg-secondary bg-opacity-10 h-100">
+                <div className="small text-white mb-1">Burned LP</div>
+                {(() => {
+                  if (poolStatus.burnedLP == null) return <span className="text-muted">—</span>;
+                  const burned = Number(ethers.formatEther(poolStatus.burnedLP));
+                  const total = poolStatus.lpTotalSupply ? Number(ethers.formatEther(poolStatus.lpTotalSupply)) : 0;
+                  const pct = total > 0 ? (burned / total) * 100 : 0;
+                  return (
+                    <>
+                      <div className="d-flex align-items-center gap-2">
+                        <i className="bi bi-fire text-danger" />
+                        <span className="fw-semibold">{formatCompact(burned, 4)}</span>
+                        <span className="badge bg-danger bg-opacity-75">{pct.toFixed(2)}%</span>
+                      </div>
+                      <div className="progress mt-2" style={{ height: 6 }}>
+                        <div className="progress-bar bg-danger" role="progressbar" style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+            <div className="col-md-3">
+              <div className="p-3 rounded bg-secondary bg-opacity-10 h-100">
+                <div className="small text-white mb-1 d-flex align-items-center gap-2">
+                  <span>STATE Out to Users</span>
+                  {stateOutResetBlock && (
+                    <span className="badge bg-info bg-opacity-50" style={{ fontSize: '0.65rem' }}>
+                      Since block {stateOutResetBlock.toLocaleString()}
+                    </span>
+                  )}
+                </div>
+                <div className="d-flex align-items-center gap-2 w-100">
+                  <i className="bi bi-coin text-warning" />
+                  <span className="fw-semibold" style={{ color: "#ff4081" }}>
+                    {stateOutLoading ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />
+                        {stateOutProgress > 0 && stateOutProgress < 100 && (
+                          <span className="small text-muted">{stateOutProgress}%</span>
+                        )}
+                      </>
+                    ) : stateOutValue == null ? (
+                      <span title="Click refresh to calculate STATE out from events">Not calculated</span>
+                    ) : (
+                      formatWithCommas(Math.round(stateOutValue))
+                    )} STATE
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-secondary ms-auto"
+                    onClick={() => {
+                      calculateStateOut();
+                      notifySuccess('Recalculating STATE out...');
+                    }}
+                    disabled={stateOutLoading}
+                    title="Recalculate STATE out from blockchain events"
+                  >
+                    <i className="bi bi-arrow-clockwise" />
+                  </button>
+                </div>
+                <div className="d-flex align-items-center gap-2 w-100 mt-1">
+                  <i className="bi bi-fire text-danger" />
+                  <span className="fw-semibold text-success">
+                    {stateOutPlsValue == null ? '—' : formatWithCommas(Math.trunc(stateOutPlsValue))} PLS
+                  </span>
+                  {/* Reset button - same size as recalculate */}
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-warning ms-auto"
+                    onClick={async () => {
+                      try {
+                        const newBlock = await resetStateOutCounter();
+                        notifySuccess(`Counter reset at block ${newBlock.toLocaleString()}`);
+                      } catch (err) {
+                        notifyError('Failed to reset counter');
+                      }
+                    }}
+                    disabled={stateOutLoading}
+                    title="Reset counter to 0 (use after adding liquidity)"
+                  >
+                    <i className="bi bi-skip-start-fill" />
+                  </button>
                 </div>
               </div>
             </div>
+          </div>
+        </>
+      ) : (
+        <div className="text-muted d-flex align-items-center gap-2">
+          <i className="bi bi-exclamation-circle" /> No pool detected yet
+        </div>
+      )}
+      {/* Before pool exists: show ONLY Create Pool UI */}
+      {!(poolStatus?.poolAddress && poolStatus.poolAddress !== ethers.ZeroAddress) && (
+        <form onSubmit={handleCreatePool}>
+          <h6 className="text-primary mb-3">🏊 Create Buy & Burn Pool</h6>
+          <div className="row g-3">
             <div className="col-md-6">
-              <div className="p-3 rounded bg-secondary bg-opacity-25 h-100">
-                <div className="small text-white mb-1">Pool Address</div>
-                <div className="d-flex align-items-center gap-2">
-                  {poolStatus?.poolAddress && poolStatus.poolAddress !== ethers.ZeroAddress ? (
-                    <>
-                      <a
-                        href={`${explorerBase}/address/${poolStatus.poolAddress}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-info"
-                      >
-                        {short(poolStatus.poolAddress)}
-                      </a>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-outline-light"
-                        onClick={() => copy(poolStatus.poolAddress, 'Pool address copied')}
-                        title="Copy address"
-                      >
-                        <i className="bi bi-files" />
-                      </button>
-                    </>
-                  ) : (
-                    <span className="text-muted">Not created</span>
-                  )}
+              <label className="form-label">STATE Amount (from SWAP vault)</label>
+              <input
+                type="number"
+                step="0.000000000000000001"
+                className="form-control"
+                value={poolData.stateAmount}
+                onChange={(e) => setPoolData((p) => ({ ...p, stateAmount: e.target.value }))}
+                placeholder="100000"
+                required
+              />
+            </div>
+            <div className="col-md-6">
+              <label className="form-label">PLS to Wrap (msg.value)</label>
+              <input
+                type="number"
+                step="0.000000000000000001"
+                className="form-control"
+                value={poolData.plsToWrap}
+                onChange={(e) => setPoolData((p) => ({ ...p, plsToWrap: e.target.value }))}
+                placeholder="1000"
+              />
+              <small className="text-muted">Optional: controller wraps PLS into WPLS</small>
+            </div>
+          </div>
+          <div className="mt-4">
+            <button type="submit" className="btn btn-success" disabled={loading}>
+              {loading ? (
+                <>
+                  <span className="spinner-border spinner-border-sm me-2" />
+                  Creating Pool...
+                </>
+              ) : (
+                "Create Buy & Burn Pool"
+              )}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* After pool exists: show (1) Execute Buy & Burn, then (2) Add More Liquidity - styled like Token page cards */}
+      {(poolStatus?.poolAddress && poolStatus.poolAddress !== ethers.ZeroAddress) && (
+        <>
+          {/* Execute Buy & Burn Card */}
+          <div className="card mb-4">
+            <div className="card-header bg-primary bg-opacity-10">
+              <h6 className="mb-0">
+                <i className="bi bi-fire me-2"></i>
+                EXECUTE BUY & BURN
+              </h6>
+            </div>
+            <div className="card-body">
+              <div className="row g-3 align-items-center">
+                <div className="col-md-9">
+                  <label className="form-label small fw-bold text-uppercase">PLS to Use</label>
+                  <input
+                    type="number"
+                    step="0.000000000000000001"
+                    className="form-control"
+                    placeholder="e.g. 250.0"
+                    value={plsToUse}
+                    onChange={(e) => setPlsToUse(e.target.value)}
+                    title="Enter the PLS amount to use"
+                  />
+                  <small className="text-muted">Required: enter the PLS amount to use</small>
+                </div>
+                <div className="col-md-3 d-flex align-items-center">
+                  <button
+                    type="button"
+                    className="btn btn-primary w-100 btn-lg"
+                    onClick={handleExecuteBuyAndBurn}
+                    disabled={loading || !((poolStatus?.plsBalance && BigInt(poolStatus.plsBalance) > 0n) || (poolStatus?.wplsBalance && BigInt(poolStatus.wplsBalance) > 0n))}
+                  >
+                    {loading ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm me-2" />
+                        Executing...
+                      </>
+                    ) : (
+                      <>
+                        <i className="bi bi-lightning-charge-fill me-2"></i>
+                        Execute Buy & Burn
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
             </div>
           </div>
 
-          {poolStatus?.poolAddress && poolStatus.poolAddress !== ethers.ZeroAddress ? (
-            <>
-              {/* Controller Wallet moved to bottom as a separate section */}
-
-              {/* KPI row: Reserves, Burned LP, and STATE Out (from DAV Vault) */}
-              <div className="row g-3">
-                <div className="col-md-3">
-                  <div className="p-3 rounded bg-secondary bg-opacity-10 h-100">
-                    <div className="small text-white mb-1">{poolStatus.stateSymbol} Reserve</div>
-                    <div className="d-flex align-items-center gap-2">
-                      <i className="bi bi-coin text-warning" />
-                      <span className="fw-semibold">{fmtUnits(poolStatus.stateReserve, poolStatus.stateDecimals, 6)}</span>
-                    </div>
-                    {statePerWplsRatio && (
-                      <div className="small text-muted mt-1">
-                        1 {poolStatus.stateSymbol} ≈ {statePerWplsRatio.wplsPerState.toFixed(6)} {poolStatus.wplsSymbol}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="col-md-3">
-                  <div className="p-3 rounded bg-secondary bg-opacity-10 h-100">
-                    <div className="small text-white mb-1">{poolStatus.wplsSymbol} Reserve</div>
-                    <div className="d-flex align-items-center gap-2">
-                      <i className="bi bi-droplet text-info" />
-                      <span className="fw-semibold">{fmtUnits(poolStatus.wplsReserve, poolStatus.wplsDecimals, 6)}</span>
-                    </div>
-                    {statePerWplsRatio && (
-                      <div className="small text-muted mt-1">
-                        1 {poolStatus.wplsSymbol} ≈ {statePerWplsRatio.statePerWpls.toFixed(6)} {poolStatus.stateSymbol}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="col-md-3">
-                  <div className="p-3 rounded bg-secondary bg-opacity-10 h-100">
-                    <div className="small text-white mb-1">Burned LP</div>
-                    {(() => {
-                      if (poolStatus.burnedLP == null) return <span className="text-muted">—</span>;
-                      const burned = Number(ethers.formatEther(poolStatus.burnedLP));
-                      const total = poolStatus.lpTotalSupply ? Number(ethers.formatEther(poolStatus.lpTotalSupply)) : 0;
-                      const pct = total > 0 ? (burned / total) * 100 : 0;
-                      return (
-                        <>
-                          <div className="d-flex align-items-center gap-2">
-                            <i className="bi bi-fire text-danger" />
-                            <span className="fw-semibold">{formatCompact(burned, 4)}</span>
-                            <span className="badge bg-danger bg-opacity-75">{pct.toFixed(2)}%</span>
-                          </div>
-                          <div className="progress mt-2" style={{ height: 6 }}>
-                            <div className="progress-bar bg-danger" role="progressbar" style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
-                          </div>
-                        </>
-                      );
-                    })()}
-                  </div>
-                </div>
-                <div className="col-md-3">
-                  <div className="p-3 rounded bg-secondary bg-opacity-10 h-100">
-                    <div className="small text-white mb-1 d-flex align-items-center gap-2">
-                      <span>STATE Out to Users</span>
-                      {stateOutResetBlock && (
-                        <span className="badge bg-info bg-opacity-50" style={{ fontSize: '0.65rem' }}>
-                          Since block {stateOutResetBlock.toLocaleString()}
-                        </span>
-                      )}
-                    </div>
-                    <div className="d-flex align-items-center gap-2 w-100">
-                      <i className="bi bi-coin text-warning" />
-                      <span className="fw-semibold" style={{ color: "#ff4081" }}>
-                        {stateOutLoading ? (
-                          <>
-                            <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />
-                            {stateOutProgress > 0 && stateOutProgress < 100 && (
-                              <span className="small text-muted">{stateOutProgress}%</span>
-                            )}
-                          </>
-                        ) : stateOutValue == null ? (
-                          <span title="Click refresh to calculate STATE out from events">Not calculated</span>
-                        ) : (
-                          formatWithCommas(Math.round(stateOutValue))
-                        )} STATE
-                      </span>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-outline-secondary ms-auto"
-                        onClick={() => { 
-                          calculateStateOut();
-                          notifySuccess('Recalculating STATE out...'); 
-                        }}
-                        disabled={stateOutLoading}
-                        title="Recalculate STATE out from blockchain events"
-                      >
-                        <i className="bi bi-arrow-clockwise" />
-                      </button>
-                    </div>
-                    <div className="d-flex align-items-center gap-2 w-100 mt-1">
-                      <i className="bi bi-fire text-danger" />
-                      <span className="fw-semibold text-success">
-                        {stateOutPlsValue == null ? '—' : formatWithCommas(Math.trunc(stateOutPlsValue))} PLS
-                      </span>
-                      {/* Reset button - same size as recalculate */}
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-outline-warning ms-auto"
-                        onClick={async () => {
-                          try {
-                            const newBlock = await resetStateOutCounter();
-                            notifySuccess(`Counter reset at block ${newBlock.toLocaleString()}`);
-                          } catch (err) {
-                            notifyError('Failed to reset counter');
-                          }
-                        }}
-                        disabled={stateOutLoading}
-                        title="Reset counter to 0 (use after adding liquidity)"
-                      >
-                        <i className="bi bi-skip-start-fill" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="text-muted d-flex align-items-center gap-2">
-              <i className="bi bi-exclamation-circle" /> No pool detected yet
+          {/* Add More Liquidity Card */}
+          <div className="card">
+            <div className="card-header bg-primary bg-opacity-10">
+              <h6 className="mb-0">
+                <i className="bi bi-droplet-fill me-2"></i>
+                ADD MORE LIQUIDITY
+              </h6>
             </div>
-          )}
-        {/* Before pool exists: show ONLY Create Pool UI */}
-        {!(poolStatus?.poolAddress && poolStatus.poolAddress !== ethers.ZeroAddress) && (
-          <form onSubmit={handleCreatePool}>
-            <h6 className="text-primary mb-3">🏊 Create Buy & Burn Pool</h6>
-            <div className="row g-3">
-              <div className="col-md-6">
-                <label className="form-label">STATE Amount (from SWAP vault)</label>
-                <input
-                  type="number"
-                  step="0.000000000000000001"
-                  className="form-control"
-                  value={poolData.stateAmount}
-                  onChange={(e) => setPoolData((p) => ({ ...p, stateAmount: e.target.value }))}
-                  placeholder="100000"
-                  required
-                />
-              </div>
-              <div className="col-md-6">
-                <label className="form-label">PLS to Wrap (msg.value)</label>
-                <input
-                  type="number"
-                  step="0.000000000000000001"
-                  className="form-control"
-                  value={poolData.plsToWrap}
-                  onChange={(e) => setPoolData((p) => ({ ...p, plsToWrap: e.target.value }))}
-                  placeholder="1000"
-                />
-                <small className="text-muted">Optional: controller wraps PLS into WPLS</small>
-              </div>
-            </div>
-            <div className="mt-4">
-              <button type="submit" className="btn btn-success" disabled={loading}>
-                {loading ? (
-                  <>
-                    <span className="spinner-border spinner-border-sm me-2" />
-                    Creating Pool...
-                  </>
-                ) : (
-                  "Create Buy & Burn Pool"
-                )}
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* After pool exists: show (1) Execute Buy & Burn, then (2) Add More Liquidity - styled like Token page cards */}
-        {(poolStatus?.poolAddress && poolStatus.poolAddress !== ethers.ZeroAddress) && (
-          <>
-            {/* Execute Buy & Burn Card */}
-            <div className="card mb-4">
-              <div className="card-header bg-primary bg-opacity-10">
-                <h6 className="mb-0">
-                  <i className="bi bi-fire me-2"></i>
-                  EXECUTE BUY & BURN
-                </h6>
-              </div>
-              <div className="card-body">
-                <div className="row g-3 align-items-center">
-                  <div className="col-md-9">
-                    <label className="form-label small fw-bold text-uppercase">PLS to Use</label>
+            <div className="card-body">
+              <form onSubmit={handleAddMoreLiquidity}>
+                <div className="row g-3 align-items-end">
+                  <div className="col-md-5">
+                    <label className="form-label small fw-bold">STATE Amount (from SWAP vault)</label>
                     <input
                       type="number"
                       step="0.000000000000000001"
-                      className="form-control"
-                      placeholder="e.g. 250.0"
-                      value={plsToUse}
-                      onChange={(e) => setPlsToUse(e.target.value)}
-                      title="Enter the PLS amount to use"
+                      className="form-control form-control-sm"
+                      value={addData.stateAmount}
+                      onChange={(e) => setAddData((p) => ({ ...p, stateAmount: e.target.value }))}
+                      placeholder="0"
+                      required
                     />
-                    <small className="text-muted">Required: enter the PLS amount to use</small>
                   </div>
-                  <div className="col-md-3 d-flex align-items-center">
-                    <button
-                      type="button"
-                      className="btn btn-primary w-100 btn-lg"
-                      onClick={handleExecuteBuyAndBurn}
-                      disabled={loading || !((poolStatus?.plsBalance && BigInt(poolStatus.plsBalance) > 0n) || (poolStatus?.wplsBalance && BigInt(poolStatus.wplsBalance) > 0n))}
-                    >
+                  <div className="col-md-4">
+                    <label className="form-label small fw-bold">PLS to Wrap (msg.value)</label>
+                    <input
+                      type="number"
+                      step="0.000000000000000001"
+                      className="form-control form-control-sm"
+                      value={addData.plsToWrap}
+                      onChange={(e) => setAddData((p) => ({ ...p, plsToWrap: e.target.value }))}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div className="col-md-3 d-grid">
+                    <button type="submit" className="btn btn-primary btn-lg w-100" disabled={loading}>
                       {loading ? (
                         <>
                           <span className="spinner-border spinner-border-sm me-2" />
-                          Executing...
+                          Adding...
                         </>
                       ) : (
                         <>
-                          <i className="bi bi-lightning-charge-fill me-2"></i>
-                          Execute Buy & Burn
+                          <i className="bi bi-plus-circle-fill me-2"></i>
+                          Add Liquidity
                         </>
                       )}
                     </button>
                   </div>
                 </div>
-              </div>
-            </div>
 
-            {/* Add More Liquidity Card */}
-            <div className="card">
-              <div className="card-header bg-primary bg-opacity-10">
-                <h6 className="mb-0">
-                  <i className="bi bi-droplet-fill me-2"></i>
-                  ADD MORE LIQUIDITY
-                </h6>
-              </div>
-              <div className="card-body">
-                <form onSubmit={handleAddMoreLiquidity}>
-                  <div className="row g-3 align-items-end">
-                    <div className="col-md-5">
-                      <label className="form-label small fw-bold">STATE Amount (from SWAP vault)</label>
+                <div className="d-flex align-items-center gap-2 mt-3 flex-wrap">
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-secondary"
+                    onClick={setByRatio_StateToWPLS}
+                    disabled={loading || !hasValidReserves || !(parseFloat(addData.stateAmount || '0') > 0)}
+                    title="Calculate PLS (to wrap) needed for given STATE using current pool ratio"
+                  >
+                    Use Pool Ratio: STATE → PLS
+                  </button>
+                  {!hasValidReserves && (
+                    <small className="text-muted">
+                      Pool ratio unavailable yet — ensure pool exists and reserves loaded.
+                    </small>
+                  )}
+                </div>
+
+                <div className="mt-2 small text-muted">
+                  Notes: STATE is pulled from SWAP vault (allowance must be set). WPLS is pulled from your wallet if provided. Any PLS sent will be wrapped into WPLS automatically. LP tokens are burned on receipt.
+                </div>
+              </form>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Controller Wallet (separate section at end) */}
+      <div className="card mt-4">
+        <div className="card-header bg-primary bg-opacity-10">
+          <h6 className="mb-0">
+            <i className="bi bi-person-badge me-2"></i>
+            CONTROLLER WALLET
+          </h6>
+        </div>
+        <div className="card-body">
+          <div className="row g-3 align-items-stretch">
+            <div className="col-md-6">
+              <div className="p-3 rounded bg-secondary bg-opacity-10 h-100">
+                <div className="small text-white mb-1">Controller Address</div>
+                {(() => {
+                  const ctrlAddr = BuyAndBurnController?.target || '';
+                  if (!ctrlAddr) return <span className="text-muted">Controller not available</span>;
+                  return (
+                    <div className="input-group input-group-sm">
                       <input
-                        type="number"
-                        step="0.000000000000000001"
-                        className="form-control form-control-sm"
-                        value={addData.stateAmount}
-                        onChange={(e) => setAddData((p) => ({ ...p, stateAmount: e.target.value }))}
-                        placeholder="0"
-                        required
+                        type="text"
+                        className="form-control"
+                        value={ctrlAddr}
+                        readOnly
+                        onFocus={(e) => e.target.select()}
                       />
-                    </div>
-                    <div className="col-md-4">
-                      <label className="form-label small fw-bold">PLS to Wrap (msg.value)</label>
-                      <input
-                        type="number"
-                        step="0.000000000000000001"
-                        className="form-control form-control-sm"
-                        value={addData.plsToWrap}
-                        onChange={(e) => setAddData((p) => ({ ...p, plsToWrap: e.target.value }))}
-                        placeholder="0"
-                      />
-                    </div>
-                    <div className="col-md-3 d-grid">
-                      <button type="submit" className="btn btn-primary btn-lg w-100" disabled={loading}>
-                        {loading ? (
-                          <>
-                            <span className="spinner-border spinner-border-sm me-2" />
-                            Adding...
-                          </>
-                        ) : (
-                          <>
-                            <i className="bi bi-plus-circle-fill me-2"></i>
-                            Add Liquidity
-                          </>
-                        )}
+                      <button
+                        type="button"
+                        className="btn btn-outline-light"
+                        onClick={() => copy(ctrlAddr, 'Controller address copied')}
+                        title="Copy address"
+                      >
+                        <i className="bi bi-files" />
                       </button>
                     </div>
-                  </div>
-
-                  <div className="d-flex align-items-center gap-2 mt-3 flex-wrap">
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-outline-secondary"
-                      onClick={setByRatio_StateToWPLS}
-                      disabled={loading || !hasValidReserves || !(parseFloat(addData.stateAmount||'0')>0)}
-                      title="Calculate PLS (to wrap) needed for given STATE using current pool ratio"
-                    >
-                      Use Pool Ratio: STATE → PLS
-                    </button>
-                    {!hasValidReserves && (
-                      <small className="text-muted">
-                        Pool ratio unavailable yet — ensure pool exists and reserves loaded.
-                      </small>
-                    )}
-                  </div>
-
-                  <div className="mt-2 small text-muted">
-                    Notes: STATE is pulled from SWAP vault (allowance must be set). WPLS is pulled from your wallet if provided. Any PLS sent will be wrapped into WPLS automatically. LP tokens are burned on receipt.
-                  </div>
-                </form>
+                  );
+                })()}
               </div>
             </div>
-          </>
-        )}
 
-                {/* Controller Wallet (separate section at end) */}
-                <div className="card mt-4">
-                  <div className="card-header bg-primary bg-opacity-10">
-                    <h6 className="mb-0">
-                      <i className="bi bi-person-badge me-2"></i>
-                      CONTROLLER WALLET
-                    </h6>
-                  </div>
-                  <div className="card-body">
-                    <div className="row g-3 align-items-stretch">
-                      <div className="col-md-6">
-                        <div className="p-3 rounded bg-secondary bg-opacity-10 h-100">
-                          <div className="small text-white mb-1">Controller Address</div>
-                          {(() => {
-                            const ctrlAddr = BuyAndBurnController?.target || '';
-                            if (!ctrlAddr) return <span className="text-muted">Controller not available</span>;
-                            return (
-                              <div className="input-group input-group-sm">
-                                <input
-                                  type="text"
-                                  className="form-control"
-                                  value={ctrlAddr}
-                                  readOnly
-                                  onFocus={(e) => e.target.select()}
-                                />
-                                <button
-                                  type="button"
-                                  className="btn btn-outline-light"
-                                  onClick={() => copy(ctrlAddr, 'Controller address copied')}
-                                  title="Copy address"
-                                >
-                                  <i className="bi bi-files" />
-                                </button>
-                              </div>
-                            );
-                          })()}
-                        </div>
-                      </div>
-
-                      <div className="col-md-6">
-                        <div className="p-3 rounded bg-secondary bg-opacity-10 h-100">
-                          <div className="small text-white mb-1">Send PLS to Controller</div>
-                          <div className="input-group input-group-sm">
-                            <input
-                              type="number"
-                              step="0.000000000000000001"
-                              inputMode="decimal"
-                              className="form-control"
-                              placeholder="Enter amount (PLS)"
-                              value={sendPlsAmount}
-                              onChange={(e) => setSendPlsAmount(e.target.value)}
-                              min="0"
-                            />
-                            <button
-                              type="button"
-                              className="btn btn-primary"
-                              onClick={handleQuickSendPLS}
-                              disabled={sendingPls || !(sendPlsAmount && Number(sendPlsAmount) > 0)}
-                              title="Send PLS to controller"
-                            >
-                              {sendingPls ? (
-                                <>
-                                  <span className="spinner-border spinner-border-sm me-2" />
-                                  Sending...
-                                </>
-                              ) : (
-                                <>
-                                  <i className="bi bi-currency-exchange me-1" /> Send PLS
-                                </>
-                              )}
-                            </button>
-                          </div>
-                          <small className="text-muted">Transfers PLS from your wallet to the controller contract</small>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+            <div className="col-md-6">
+              <div className="p-3 rounded bg-secondary bg-opacity-10 h-100">
+                <div className="small text-white mb-1">Send PLS to Controller</div>
+                <div className="input-group input-group-sm">
+                  <input
+                    type="number"
+                    step="0.000000000000000001"
+                    inputMode="decimal"
+                    className="form-control"
+                    placeholder="Enter amount (PLS)"
+                    value={sendPlsAmount}
+                    onChange={(e) => setSendPlsAmount(e.target.value)}
+                    min="0"
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleQuickSendPLS}
+                    disabled={sendingPls || !(sendPlsAmount && Number(sendPlsAmount) > 0)}
+                    title="Send PLS to controller"
+                  >
+                    {sendingPls ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm me-2" />
+                        Sending...
+                      </>
+                    ) : (
+                      <>
+                        <i className="bi bi-currency-exchange me-1" /> Send PLS
+                      </>
+                    )}
+                  </button>
                 </div>
+                <small className="text-muted">Transfers PLS from your wallet to the controller contract</small>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

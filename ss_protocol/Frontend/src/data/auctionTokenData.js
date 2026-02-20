@@ -3,23 +3,24 @@ import { generateIdenticon } from "../utils/identicon";
 import { isImageUrl } from "../Constants/Constants";
 import { useSwapContract } from "../Functions/SwapContractFunctions";
 import { useDAvContract } from "../Functions/DavTokenFunctions";
+import { useTokenStore, useAuctionStore, useUserStore } from "../stores";
 
 export const useAuctionTokens = () => {
 	// Use context directly for reliable immediate data access
-	const {
-		SwapTokens,
-		isReversed,
-		AuctionTime,
-		RatioTargetsofTokens,
-		IsAuctionActive,
-		userHashSwapped,
-		userHasReverseSwapped,
-		InputAmount,
-		OutPutAmount,
-		AirdropClaimed,
-		TokenNames,
-		tokenMap,
-	} = useSwapContract();
+	// Action function from context (only needs signer/contracts)
+	const { SwapTokens } = useSwapContract();
+	// Data from Zustand stores (granular subscriptions, no cascade re-renders)
+	const isReversed = useTokenStore(state => state.isReversed);
+	const AuctionTime = useAuctionStore(state => state.AuctionTime);
+	const RatioTargetsofTokens = useTokenStore(state => state.RatioTargetsofTokens);
+	const IsAuctionActive = useTokenStore(state => state.isAuctionActive);
+	const userHashSwapped = useUserStore(state => state.userHashSwapped);
+	const userHasReverseSwapped = useUserStore(state => state.userHasReverseSwapped);
+	const InputAmount = useAuctionStore(state => state.InputAmount);
+	const OutPutAmount = useAuctionStore(state => state.OutPutAmount);
+	const AirdropClaimed = useUserStore(state => state.AirdropClaimed);
+	const TokenNames = useTokenStore(state => state.TokenNames);
+	const tokenMap = useTokenStore(state => state.tokenMap);
 
 	const { Emojies, names } = useDAvContract();
 	const [loading, setLoading] = useState(true);
@@ -65,7 +66,7 @@ export const useAuctionTokens = () => {
 				emoji,
 				ContractName: contract,
 				token: address,
-				handleAddToken: () => {},
+				handleAddToken: () => { },
 				ratio: `1:${RatioTargetsofTokens?.[contract] || 0}`,
 				currentRatio: `1:1000`,
 				TimeLeft: AuctionTime?.[contract],
@@ -91,7 +92,7 @@ export const useAuctionTokens = () => {
 		// Debounce: don't update more than once per second
 		const now = Date.now();
 		if (now - lastUpdateRef.current < 1000) return;
-		
+
 		const snapshot = JSON.stringify(newTokenConfigs);
 		if (prevSnapshotRef.current !== snapshot) {
 			prevSnapshotRef.current = snapshot;

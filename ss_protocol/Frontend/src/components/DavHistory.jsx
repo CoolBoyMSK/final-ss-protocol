@@ -45,9 +45,11 @@ const DavHistory = () => {
             }
 
             const filter = AllContracts.davContract.filters.Transfer(null, address);
-            const events = await AllContracts.davContract.queryFilter(filter, 0, 'latest');
+            // Only scan last ~30 days of blocks (864,000 blocks at ~3s/block on PulseChain)
             const latestBlock = await provider.getBlock('latest');
             const latestTs = Number(latestBlock?.timestamp || 0);
+            const fromBlock = Math.max(0, latestBlock.number - 864000);
+            const events = await AllContracts.davContract.queryFilter(filter, fromBlock, 'latest');
 
             const rows = [];
             for (const ev of events) {
@@ -68,7 +70,7 @@ const DavHistory = () => {
                   isExpired: expired,
                   batchType: (from === '0x0000000000000000000000000000000000000000') ? 'mint' : 'promo',
                 });
-              } catch {}
+              } catch { }
             }
 
             const sortedEv = rows.sort((a, b) => {
@@ -97,29 +99,29 @@ const DavHistory = () => {
         const transferList = []; // Array of {amountWeiStr, timestamp, type}
         const allEvents = []; // Detailed list with usage tracking for 1:1 mapping
         const eventsByAmount = new Map(); // amountWeiStr -> array of event refs
-        
+
         if (provider && mintTimes.length > 0) {
           try {
             // Find earliest and latest block timestamps
             const timestamps = mintTimes.map(t => Number(t));
             const minTimestamp = Math.min(...timestamps);
             const maxTimestamp = Math.max(...timestamps);
-            
+
             // Estimate block range (approximate 12s per block on PulseChain)
             // Pull from genesis to avoid missing historical events
             const fromBlock = 0;
-            
+
             // Query Transfer events where 'to' is the user
             const filter = AllContracts.davContract.filters.Transfer(null, address);
             const events = await AllContracts.davContract.queryFilter(filter, fromBlock, 'latest');
             // Sort events by blockNumber ascending for deterministic matching
-            events.sort((a,b) => (a.blockNumber || 0) - (b.blockNumber || 0));
-            
+            events.sort((a, b) => (a.blockNumber || 0) - (b.blockNumber || 0));
+
             // Classify each event and store with timestamp
             for (const event of events) {
               const from = (event.args?.from || event.args?.[0] || "").toLowerCase();
               const value = event.args?.value ?? event.args?.[2];
-              
+
               // Get block timestamp for this event
               let blockTimestamp = 0;
               try {
@@ -129,9 +131,9 @@ const DavHistory = () => {
                 console.warn(`Could not fetch block ${event.blockNumber}`, e);
                 continue;
               }
-              
+
               const amountWeiStr = value?.toString?.() ?? String(value);
-              
+
               // Classify based on sender:
               // - from zero address = minted (user paid to mint)
               // - from non-zero address = promo (governance or other wallet transferred)
@@ -140,7 +142,7 @@ const DavHistory = () => {
               if (from === zeroAddr) {
                 type = "mint";
               }
-              
+
               const evObj = { amountWeiStr, timestamp: Number(blockTimestamp), type, used: false };
               allEvents.push(evObj);
               transferList.push({ amountWeiStr, timestamp: Number(blockTimestamp), type });
@@ -188,12 +190,12 @@ const DavHistory = () => {
           );
           const amountWeiStr = amounts[i]?.toString?.() ?? String(amounts[i]);
           const amountFormatted = ethers.formatEther(amountWeiStr);
-          
+
           // Robust mapping: match by exact amount (wei) and nearest timestamp
           let batchType = 'mint';
           const matched = pickEventForBatch(amountWeiStr, mintTimestamp);
           if (matched && matched.type) batchType = matched.type;
-          
+
           return {
             mintedAt: formatTimestamp(mint),
             mintedAtRaw: mintTimestamp,

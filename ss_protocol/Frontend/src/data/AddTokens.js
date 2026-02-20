@@ -2,14 +2,17 @@
 
 import { ethers } from "ethers";
 import { useDAvContract } from "../Functions/DavTokenFunctions";
-import { useSwapContract } from "../Functions/SwapContractFunctions";
+import { useTokenStore, useUserStore } from "../stores";
 import { useEffect, useState } from "react";
 
 // ✅ 1. First hook: for general token config
 export const useAddTokens = () => {
 	const { names, users, Emojies, isUsed } = useDAvContract();
-	// Use context directly for reliable immediate data access
-	const { tokenMap, TimeLeftClaim, supportedToken, isTokenRenounce } = useSwapContract();
+	// Use Zustand stores for data (no Context needed)
+	const tokenMap = useTokenStore(state => state.tokenMap);
+	const TimeLeftClaim = useTokenStore(state => state.TimeLeftClaim);
+	const supportedToken = useTokenStore(state => state.supportedToken);
+	const isTokenRenounce = useTokenStore(state => state.isTokenRenounce);
 	const [AuthLoading, setAuthLoading] = useState(true);
 
 	useEffect(() => {
@@ -76,7 +79,8 @@ export const useAddTokens = () => {
 
 export const useUsersOwnerTokens = () => {
 	// Use context directly for reliable immediate data access
-	const { UsersSupportedTokens } = useSwapContract();
+	// Use Zustand store for user-specific data
+	const UsersSupportedTokens = useUserStore(state => state.UsersSupportedTokens);
 	const { names, Emojies } = useDAvContract();
 
 	// Create name → Emojies map

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useContractContext } from "../../Functions/useContractContext";
 import { ethers } from "ethers";
 import { toast } from "react-hot-toast";
+import { createSmartPoller } from '../../utils/smartPolling';
 
 export default function AuctionControlPage() {
   const { AuctionContract, SwapLens } = useContractContext();
@@ -42,7 +43,7 @@ export default function AuctionControlPage() {
             const active = Boolean(today[1]);
             if (active) scheduled = true;
           }
-        } catch {}
+        } catch { }
       }
 
       // Remove all heuristic inference (tokenCount, non-zero token address, etc.) to prevent false positives
@@ -53,12 +54,17 @@ export default function AuctionControlPage() {
     }
   };
 
-  useEffect(() => { loadStatus(); }, [AuctionContract]);
-
-  // Poll periodically to reflect schedule state without manual refresh
+  // Smart poll to reflect schedule state without manual refresh
   useEffect(() => {
-    const id = setInterval(() => { loadStatus(); }, 15000); // 15s poll
-    return () => clearInterval(id);
+    const poller = createSmartPoller(loadStatus, {
+      activeInterval: 30000,
+      idleInterval: 120000,
+      fetchOnStart: true,
+      fetchOnVisible: true,
+      name: 'auction-control-status'
+    });
+    poller.start();
+    return () => poller.stop();
   }, [AuctionContract]);
 
   const startAuction = async (e) => {
@@ -69,7 +75,7 @@ export default function AuctionControlPage() {
     }
     setLoading(true);
     try {
-  // Contract calculates next GMT+5 9:00 PM internally; no params needed
+      // Contract calculates next GMT+5 9:00 PM internally; no params needed
       const tx = await AuctionContract.startAuctionWithAutoTokens();
       toast.success(`Start auction tx sent: ${tx.hash}`, { duration: 12000 });
       await tx.wait();
