@@ -18,16 +18,20 @@
 .dex-modal {
   position: relative;
   /* Reduce outer container by ~25% without scaling inner content */
-  width: 69vw; /* was 92vw */
-  max-width: 585px; /* was 780px */
-  max-height: 88vh; /* restore to avoid unnecessary scrollbar */
-  overflow: auto;
+  width: 61vw;
+  max-width: 510px;
+  height: 535px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
   background: linear-gradient(180deg, #121212 0%, #0d0d0f 100%);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 16px;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
   color: #eaeaea;
-  padding: 10px 10px 6px 10px; /* slightly smaller outer box without changing inner card */
+  padding: 8px 8px 0 8px;
 }
 
 .dex-header {
@@ -102,15 +106,18 @@
 }
 
 .dex-body {
-  padding: 14px 10px 10px 10px;
+  padding: 10px 8px 0 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 @media (max-width: 576px) {
   .dex-modal {
     /* Keep mobile usability high; do not shrink as aggressively on small screens */
-    width: 94vw; /* slight reduction only on mobile */
-    max-width: 94vw;
-    height: auto;
+    width: 92vw;
+    max-width: 92vw;
+    height: 600px;
     max-height: 88vh;
     border-radius: 14px;
   }

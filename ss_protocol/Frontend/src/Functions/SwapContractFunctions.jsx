@@ -22,11 +22,12 @@ import { useDAvContract } from "./DavTokenFunctions";
 import { notifyError, notifySuccess, PULSEX_ROUTER_ABI, PULSEX_ROUTER_ADDRESS, WPLS_ADDRESS } from "../Constants/Constants";
 import { geckoPoolsForTokenApiUrl } from "../Constants/ExternalLinks";
 import { getRuntimeConfigSync } from "../Constants/RuntimeConfig";
+import { getContractConfigs } from "../Constants/ContractConfig";
 import { getAuctionTiming, formatDuration, computePhaseFromSlotInfo, computeManualPhase } from "../utils/auctionTiming";
 import { getCachedContract, COMMON_ABIS } from "../utils/contractCache";
 import { createSmartPoller } from "../utils/smartPolling";
 // Zustand stores for optimized state management
-import { useAuctionStore, useUserStore, useTokenStore, useUIStore } from "../stores";
+import { useAuctionStore, useUserStore, useTokenStore, useUIStore, useDeploymentStore } from "../stores";
 
 // Provide a safe default object so consumers can destructure without crashing
 const SwapContractContext = createContext({});
@@ -36,11 +37,28 @@ export const useSwapContract = () => useContext(SwapContractContext);
 export const SwapContractProvider = ({ children }) => {
   const { fetchStateHolding } = useDAvContract();
   const chainId = useChainId();
+  const selectedDavId = useDeploymentStore((state) => state.selectedDavId);
+  const HTTP_RPC_URL = "https://rpc.pulsechain.com"; // Use reliable RPC
+  // Memoize the HTTP provider to prevent re-creation on every render
+  const httpProvider = useMemo(() => new ethers.JsonRpcProvider(HTTP_RPC_URL), []);
   const { loading, provider, signer, AllContracts } =
     useContext(ContractContext);
   const { address, connector } = useAccount();
   const { data: walletClient } = useWalletClient();
   const toastId = useRef(null);
+  const scopeKeyRef = useRef('');
+  const getCurrentScopeKey = useCallback(() => {
+    const chainPart = Number(chainId || 0);
+    const davPart = String(selectedDavId || 'DAV1').toUpperCase();
+    const auctionPart = String(AllContracts?.AuctionContract?.target || '').toLowerCase();
+    return `${chainPart}-${davPart}-${auctionPart}`;
+  }, [chainId, selectedDavId, AllContracts?.AuctionContract]);
+  const isScopeStillActive = useCallback((scopeKey) => {
+    return String(scopeKey || '') === String(scopeKeyRef.current || '');
+  }, []);
+  useEffect(() => {
+    scopeKeyRef.current = getCurrentScopeKey();
+  }, [getCurrentScopeKey]);
   useEffect(() => {
     if (!walletClient) return;
 
@@ -315,11 +333,13 @@ export const SwapContractProvider = ({ children }) => {
   const setBurnLpAmount = useCallback((v) => { _setBurnLpAmount(v); useTokenStore.getState().setBatch({ burnedLPAmount: v, burnedLPAmounts: v }); }, []);
   // Manual timer mode (project-driven schedule, no chain dependency)
   const USE_MANUAL_TIMER = true;
-  const MANUAL_DAV2_ANCHOR_UTC = 1771682400; // 2026-02-21 14:00:00 UTC (GMT+3 17:00)
+  const MANUAL_DAV2_ANCHOR_UTC = 1772373600; // 2026-03-01 14:00:00 UTC (GMT+3 17:00)
+  const MANUAL_DAV3_ANCHOR_UTC = 1772460000; // 2026-03-02 14:00:00 UTC (GMT+3 17:00)
 
   const getManualTimerAnchor = useCallback(() => {
     const runtimeDavId = String(getRuntimeConfigSync()?.selection?.davId || "DAV1").toUpperCase();
     if (runtimeDavId === "DAV2") return MANUAL_DAV2_ANCHOR_UTC;
+    if (runtimeDavId === "DAV3") return MANUAL_DAV3_ANCHOR_UTC;
     return undefined; // DAV1 and others use default anchor from auctionTiming utility
   }, []);
   // Track previous auction phase to detect boundaries
@@ -329,9 +349,178 @@ export const SwapContractProvider = ({ children }) => {
 
   // ============ PERSISTENT CACHE SYSTEM ============
   // Cache all swap data to localStorage to prevent memory issues on page load
-  const SWAP_CACHE_KEY = 'swap_data_cache';
+  const SWAP_CACHE_KEY_BASE = 'swap_data_cache';
   const SWAP_CACHE_TTL = 5 * 60 * 1000; // 5 minutes - after this, fetch fresh data
   const dataLoadedRef = useRef(false); // Track if we've loaded from cache
+  const prefetchInFlightRef = useRef(new Set());
+  const PREFETCH_DAV_IDS = ['DAV1', 'DAV2'];
+  const makeSwapCacheKey = useCallback((inChainId, inDavId) => {
+    const safeChain = Number(inChainId || 0);
+    const safeDav = String(inDavId || 'DAV1').toUpperCase();
+    return `${SWAP_CACHE_KEY_BASE}_${safeChain}_${safeDav}`;
+  }, []);
+  const getSwapCacheKey = useCallback(() => {
+    return makeSwapCacheKey(chainId, selectedDavId);
+  }, [chainId, selectedDavId, makeSwapCacheKey]);
+
+  const prefetchInactiveDavCache = useCallback(async (davId) => {
+    try {
+      const targetDav = String(davId || '').toUpperCase();
+      if (!targetDav || targetDav === String(selectedDavId || '').toUpperCase()) return;
+      if (!chainId) return;
+
+      const cacheKey = makeSwapCacheKey(chainId, targetDav);
+      const existingRaw = localStorage.getItem(cacheKey);
+      if (existingRaw) {
+        try {
+          const parsed = JSON.parse(existingRaw);
+          const age = Date.now() - Number(parsed?.timestamp || 0);
+          if (Number.isFinite(age) && age >= 0 && age < 60 * 1000) return;
+        } catch { }
+      }
+
+      if (prefetchInFlightRef.current.has(cacheKey)) return;
+      prefetchInFlightRef.current.add(cacheKey);
+
+      const cfg = getContractConfigs(Number(chainId), targetDav);
+      const auctionAddr = cfg?.AuctionContract?.address;
+      const auctionAbi = cfg?.AuctionContract?.abi;
+      if (!auctionAddr || !auctionAbi) return;
+
+      const readProvider = httpProvider || provider;
+      if (!readProvider) return;
+
+      const auction = new ethers.Contract(auctionAddr, auctionAbi, readProvider);
+
+      const tokenMapPrefetch = {};
+      let tokenCount = 0;
+      try {
+        tokenCount = Number(await auction.tokenCount?.());
+      } catch {
+        tokenCount = 0;
+      }
+
+      const tokenAddressCalls = [];
+      for (let i = 0; i < tokenCount; i++) {
+        tokenAddressCalls.push(auction.autoRegisteredTokens(i).catch(() => null));
+      }
+      const tokenAddresses = (await Promise.all(tokenAddressCalls)).filter((a) => a && a !== ethers.ZeroAddress);
+
+      const tokenMetaCalls = tokenAddresses.map(async (tokenAddress, idx) => {
+        try {
+          const tokenContract = getCachedContract(tokenAddress, 'ERC20_META', readProvider);
+          const [name, symbol] = await Promise.all([
+            tokenContract.name().catch(() => `Token${idx}`),
+            tokenContract.symbol().catch(() => ""),
+          ]);
+          return { name, symbol, tokenAddress };
+        } catch {
+          return { name: `Token${idx}`, symbol: "", tokenAddress };
+        }
+      });
+
+      const tokenMetas = await Promise.all(tokenMetaCalls);
+      for (const { name, symbol, tokenAddress } of tokenMetas) {
+        tokenMapPrefetch[name] = tokenAddress;
+        if (symbol && symbol !== name) tokenMapPrefetch[symbol] = tokenAddress;
+      }
+
+      const ratioMap = {};
+      await Promise.all(
+        Object.entries(tokenMapPrefetch).map(async ([tokenName, tokenAddress]) => {
+          try {
+            const raw = await auction.getRatioPrice(tokenAddress);
+            ratioMap[tokenName] = Number(ethers.formatEther(raw));
+          } catch {
+            ratioMap[tokenName] = "not started";
+          }
+        })
+      );
+
+      let todayTokenAddr = "";
+      let todayTokenNamePrefetch = "";
+      let todayTokenSymbolPrefetch = "";
+      let todayTokenDecimalsPrefetch = 18;
+      try {
+        const todayInfo = await auction.getTodayToken();
+        todayTokenAddr = todayInfo?.[0] || todayInfo?.tokenOfDay || "";
+        if (todayTokenAddr && todayTokenAddr !== ethers.ZeroAddress) {
+          const todayToken = getCachedContract(todayTokenAddr, 'TOKEN_META', readProvider);
+          const [name, symbol, decimals] = await Promise.all([
+            todayToken.name().catch(() => ""),
+            todayToken.symbol().catch(() => ""),
+            todayToken.decimals().catch(() => 18),
+          ]);
+          todayTokenNamePrefetch = name || "";
+          todayTokenSymbolPrefetch = symbol || "";
+          todayTokenDecimalsPrefetch = Number(decimals) || 18;
+        }
+      } catch { }
+
+      const inputMap = {};
+      const outputMap = {};
+      const airdropMap = {};
+
+      if (address) {
+        const airdropAddr = cfg?.airdropDistributor?.address;
+        const airdropAbi = cfg?.airdropDistributor?.abi;
+        const airdrop = (airdropAddr && airdropAbi) ? new ethers.Contract(airdropAddr, airdropAbi, readProvider) : null;
+
+        await Promise.all(
+          Object.entries(tokenMapPrefetch).map(async ([tokenName, tokenAddress]) => {
+            try {
+              const raw = await auction.getAvailableDavForAuction(address, tokenAddress);
+              inputMap[tokenName] = Math.floor(Number(ethers.formatEther(raw || 0n)));
+            } catch {
+              inputMap[tokenName] = 0;
+            }
+            try {
+              const raw = await auction.getUserStateBalance(address, tokenAddress);
+              outputMap[tokenName] = Math.floor(Number(ethers.formatEther(raw || 0n)));
+            } catch {
+              outputMap[tokenName] = 0;
+            }
+            if (airdrop) {
+              try {
+                const claimable = await airdrop.getClaimable(tokenAddress, address);
+                const amountWei = Array.isArray(claimable) ? (claimable[2] || 0n) : (claimable?.amount || 0n);
+                airdropMap[tokenName] = Math.floor(Number(ethers.formatEther(amountWei)));
+              } catch {
+                airdropMap[tokenName] = 0;
+              }
+            }
+          })
+        );
+      }
+
+      const warmedCache = {
+        timestamp: Date.now(),
+        chainId,
+        selectedDavId: targetDav,
+        TokenRatio: ratioMap,
+        tokenMap: tokenMapPrefetch,
+        TokenNames: Object.keys(tokenMapPrefetch),
+        InputAmount: inputMap,
+        OutPutAmount: outputMap,
+        AirDropAmount: airdropMap,
+        todayTokenAddress: todayTokenAddr || "",
+        todayTokenName: todayTokenNamePrefetch,
+        todayTokenSymbol: todayTokenSymbolPrefetch,
+        todayTokenDecimals: todayTokenDecimalsPrefetch,
+      };
+
+      localStorage.setItem(cacheKey, JSON.stringify(warmedCache));
+      console.log(`🔥 Prefetched warm cache for ${targetDav}`);
+    } catch (e) {
+      console.debug('Inactive DAV prefetch failed:', e?.message || e);
+    } finally {
+      try {
+        const targetDav = String(davId || '').toUpperCase();
+        const cacheKey = makeSwapCacheKey(chainId, targetDav);
+        prefetchInFlightRef.current.delete(cacheKey);
+      } catch { }
+    }
+  }, [selectedDavId, chainId, address, httpProvider, provider, makeSwapCacheKey]);
 
   // Save all current state to cache
   const saveToCache = useCallback(() => {
@@ -339,6 +528,7 @@ export const SwapContractProvider = ({ children }) => {
       const cacheData = {
         timestamp: Date.now(),
         chainId,
+        selectedDavId,
         TokenRatio,
         CurrentCycleCount,
         TokenBalance,
@@ -356,17 +546,17 @@ export const SwapContractProvider = ({ children }) => {
         // (AirdropClaimed, userHasBurned, etc.) because they must always
         // be fetched fresh from the chain to avoid stale tick marks.
       };
-      localStorage.setItem(SWAP_CACHE_KEY, JSON.stringify(cacheData));
+      localStorage.setItem(getSwapCacheKey(), JSON.stringify(cacheData));
       console.log('💾 Saved swap data to cache');
     } catch (e) {
       console.warn('Failed to save swap cache:', e);
     }
-  }, [chainId, TokenRatio, CurrentCycleCount, TokenBalance, burnedAmount, burnedLPAmount, TokenPariAddress, tokenMap, TokenNames, supportedToken, isTokenRenounce, IsAuctionActive, isReversed, pstateToPlsRatio]);
+  }, [chainId, selectedDavId, TokenRatio, CurrentCycleCount, TokenBalance, burnedAmount, burnedLPAmount, TokenPariAddress, tokenMap, TokenNames, supportedToken, isTokenRenounce, IsAuctionActive, isReversed, pstateToPlsRatio, getSwapCacheKey]);
 
   // Load cached data into state
   const loadFromCache = useCallback(() => {
     try {
-      const raw = localStorage.getItem(SWAP_CACHE_KEY);
+      const raw = localStorage.getItem(getSwapCacheKey());
       if (!raw) return false;
 
       const cached = JSON.parse(raw);
@@ -376,10 +566,23 @@ export const SwapContractProvider = ({ children }) => {
         console.log('🔄 Cache is for different chain, will fetch fresh data');
         return false;
       }
+      if (String(cached.selectedDavId || 'DAV1').toUpperCase() !== String(selectedDavId || 'DAV1').toUpperCase()) {
+        console.log('🔄 Cache is for different DAV deployment, will fetch fresh data');
+        return false;
+      }
 
       // Load cached values into state
       if (cached.TokenRatio && Object.keys(cached.TokenRatio).length > 0) {
         setTokenRatio(cached.TokenRatio);
+      }
+      if (cached.InputAmount && Object.keys(cached.InputAmount).length > 0) {
+        setInputAmount(cached.InputAmount);
+      }
+      if (cached.OutPutAmount && Object.keys(cached.OutPutAmount).length > 0) {
+        setOutputAmount(cached.OutPutAmount);
+      }
+      if (cached.AirDropAmount && Object.keys(cached.AirDropAmount).length > 0) {
+        setAirdropAmount(cached.AirDropAmount);
       }
       if (cached.CurrentCycleCount && Object.keys(cached.CurrentCycleCount).length > 0) {
         setCurrentCycleCount(cached.CurrentCycleCount);
@@ -417,6 +620,18 @@ export const SwapContractProvider = ({ children }) => {
       if (cached.pstateToPlsRatio) {
         setPstateToPlsRatio(cached.pstateToPlsRatio);
       }
+      if (typeof cached.todayTokenAddress === 'string') {
+        setTodayTokenAddress(cached.todayTokenAddress);
+      }
+      if (typeof cached.todayTokenSymbol === 'string') {
+        setTodayTokenSymbol(cached.todayTokenSymbol);
+      }
+      if (typeof cached.todayTokenName === 'string') {
+        setTodayTokenName(cached.todayTokenName);
+      }
+      if (cached.todayTokenDecimals !== undefined && cached.todayTokenDecimals !== null) {
+        setTodayTokenDecimals(Number(cached.todayTokenDecimals) || 18);
+      }
       // NOTE: We intentionally do NOT restore per-user completion flags
       // (AirdropClaimed, userHasBurned, userHashSwapped, etc.) from cache.
       // These must always be fetched fresh from the chain to avoid showing
@@ -429,31 +644,107 @@ export const SwapContractProvider = ({ children }) => {
       console.warn('Failed to load swap cache:', e);
       return false;
     }
-  }, [chainId]);
+  }, [chainId, selectedDavId, getSwapCacheKey]);
 
   // Check if cache is still valid (not expired)
   const isCacheValid = useCallback(() => {
     try {
-      const raw = localStorage.getItem(SWAP_CACHE_KEY);
+      const raw = localStorage.getItem(getSwapCacheKey());
       if (!raw) return false;
       const cached = JSON.parse(raw);
       if (cached.chainId !== chainId) return false;
+      if (String(cached.selectedDavId || 'DAV1').toUpperCase() !== String(selectedDavId || 'DAV1').toUpperCase()) return false;
       return (Date.now() - cached.timestamp) < SWAP_CACHE_TTL;
     } catch {
       return false;
     }
-  }, [chainId]);
+  }, [chainId, selectedDavId, getSwapCacheKey]);
+
+  const davScopeRef = useRef(null);
+  useEffect(() => {
+    const scope = `${Number(chainId || 0)}-${String(selectedDavId || 'DAV1').toUpperCase()}`;
+    if (davScopeRef.current === scope) return;
+    davScopeRef.current = scope;
+
+    // Hard reset user-visible auction state so old DAV values never flash
+    setAuctionTime({});
+    setAuctionEndAt({});
+    setAuctionPhase(null);
+    setAuctionPhaseSeconds(0);
+    setTodayTokenAddress("");
+    setTodayTokenSymbol("");
+    setTodayTokenName("");
+    setTodayTokenDecimals(18);
+    setReverseWindowActive(null);
+
+    setInputAmount({});
+    setOutputAmount({});
+    setAirdropAmount({});
+    setTokenRatio({});
+    setTokenMap({});
+    setTokenNames([]);
+    setPairAddresses({});
+    setCurrentCycleCount({});
+    setisAuctionActive({});
+    setIsReverse({});
+
+    setUserHasBurned({});
+    setUserHashSwapped({});
+    setUserHasReverseSwapped({});
+    setUserReverseStep1({});
+    setUserReverseStep2({});
+    setAirdropClaimed({});
+    setReverseStateMap({});
+
+    tokenAddressCacheRef.current = { data: null, timestamp: 0, scopeKey: null };
+  }, [
+    chainId,
+    selectedDavId,
+    setAuctionTime,
+    setAuctionEndAt,
+    setAuctionPhase,
+    setAuctionPhaseSeconds,
+    setTodayTokenAddress,
+    setTodayTokenSymbol,
+    setTodayTokenName,
+    setTodayTokenDecimals,
+    setReverseWindowActive,
+    setInputAmount,
+    setOutputAmount,
+    setAirdropAmount,
+    setTokenRatio,
+    setisAuctionActive,
+    setIsReverse,
+    setUserHasBurned,
+    setUserHashSwapped,
+    setUserHasReverseSwapped,
+    setUserReverseStep1,
+    setUserReverseStep2,
+    setAirdropClaimed,
+    setReverseStateMap,
+  ]);
 
   // Load from cache on mount (only once)
   useEffect(() => {
-    if (!dataLoadedRef.current) {
-      dataLoadedRef.current = true;
-      const loaded = loadFromCache();
-      if (loaded) {
-        console.log('✅ Using cached data - page loaded instantly');
-      }
+    dataLoadedRef.current = true;
+    const loaded = loadFromCache();
+    if (loaded) {
+      console.log('✅ Using cached data - page loaded instantly');
     }
   }, [loadFromCache]);
+
+  useEffect(() => {
+    if (!AllContracts?.AuctionContract || !chainId) return;
+    const timer = setTimeout(() => {
+      const currentDav = String(selectedDavId || 'DAV1').toUpperCase();
+      PREFETCH_DAV_IDS
+        .filter((davId) => davId !== currentDav)
+        .forEach((davId) => {
+          prefetchInactiveDavCache(davId);
+        });
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [AllContracts?.AuctionContract, chainId, selectedDavId, address, prefetchInactiveDavCache]);
 
   // Save to cache whenever data changes (debounced)
   const saveCacheTimeoutRef = useRef(null);
@@ -546,7 +837,9 @@ export const SwapContractProvider = ({ children }) => {
     // Check cache first to prevent repeated RPC calls
     const now = Date.now();
     const cache = tokenAddressCacheRef.current;
-    if (cache.data && (now - cache.timestamp) < TOKEN_CACHE_TTL) {
+    const auctionAddr = (AllContracts?.AuctionContract?.target || '').toLowerCase();
+    const cacheScopeKey = `${Number(chainId || 0)}-${String(selectedDavId || 'DAV1').toUpperCase()}-${auctionAddr}`;
+    if (cache.data && cache.scopeKey === cacheScopeKey && (now - cache.timestamp) < TOKEN_CACHE_TTL) {
       return cache.data;
     }
 
@@ -596,14 +889,18 @@ export const SwapContractProvider = ({ children }) => {
       }
 
       // Cache the result
-      tokenAddressCacheRef.current = { data: tokenMap, timestamp: Date.now() };
+      tokenAddressCacheRef.current = { data: tokenMap, timestamp: Date.now(), scopeKey: cacheScopeKey };
 
       return tokenMap;
     } catch (error) {
       console.error("Error in ReturnfetchUserTokenAddresses:", error);
-      return tokenAddressCacheRef.current.data || {};
+      return (tokenAddressCacheRef.current.scopeKey === cacheScopeKey ? tokenAddressCacheRef.current.data : null) || {};
     }
   };
+
+  useEffect(() => {
+    tokenAddressCacheRef.current = { data: null, timestamp: 0, scopeKey: null };
+  }, [chainId, selectedDavId, AllContracts?.AuctionContract]);
 
   const fetchTokenData = async ({
     contractMethod,
@@ -613,6 +910,7 @@ export const SwapContractProvider = ({ children }) => {
     buildArgs,
     useAddressAsKey = false, // New: Control whether to key results by address
   }) => {
+    const scopeAtStart = scopeKeyRef.current;
     try {
       if (!AllContracts?.AuctionContract) {
         console.debug(`fetchTokenData(${contractMethod}) skipped: auction contract not ready`);
@@ -701,6 +999,9 @@ export const SwapContractProvider = ({ children }) => {
         }
       }
 
+      if (!isScopeStillActive(scopeAtStart)) {
+        return {};
+      }
       setState(results);
       return results;
     } catch (err) {
@@ -713,6 +1014,7 @@ export const SwapContractProvider = ({ children }) => {
   // Fetches ALL completion flags AND available DAV units for ALL tokens in a single highly parallelized operation
   // This is MUCH faster than calling 6+ separate functions sequentially
   const fetchAllCompletionFlagsFast = async () => {
+    const scopeAtStart = scopeKeyRef.current;
     try {
       if (!AllContracts?.AuctionContract || !address) {
         console.debug('fetchAllCompletionFlagsFast: contract or address not ready');
@@ -841,6 +1143,9 @@ export const SwapContractProvider = ({ children }) => {
       }
 
       // Update all states at once
+      if (!isScopeStillActive(scopeAtStart)) {
+        return;
+      }
       setAirdropClaimed(airdropClaimedResults);
       setUserHasBurned(hasBurnedResults);
       setUserHashSwapped(hasSwappedResults);
@@ -906,10 +1211,6 @@ export const SwapContractProvider = ({ children }) => {
       buildArgs: (tokenAddress) => [tokenAddress],
     });
   };
-
-  const HTTP_RPC_URL = "https://rpc.pulsechain.com"; // Use reliable RPC
-  // Memoize the HTTP provider to prevent re-creation on every render
-  const httpProvider = useMemo(() => new ethers.JsonRpcProvider(HTTP_RPC_URL), []);
 
   // Developer override: allow forcing direct contract calls even if simulation fails
   const allowDirectContractCalls = () => {
@@ -2011,6 +2312,7 @@ export const SwapContractProvider = ({ children }) => {
 
   // Centralized today's token fetch - called once per refresh cycle
   const fetchTodayToken = async () => {
+    const scopeAtStart = scopeKeyRef.current;
     try {
       if (!AllContracts?.AuctionContract) return;
       // Prefer SwapLens for non-reverting daily status
@@ -2026,6 +2328,7 @@ export const SwapContractProvider = ({ children }) => {
       }
 
       if (todayAddr && todayAddr !== ethers.ZeroAddress) {
+        if (!isScopeStillActive(scopeAtStart)) return;
         setTodayTokenAddress(todayAddr);
 
         // Use contract runner if available, otherwise fallback to provider
@@ -2042,12 +2345,14 @@ export const SwapContractProvider = ({ children }) => {
           erc20.decimals().catch(() => 18),
         ]);
 
+        if (!isScopeStillActive(scopeAtStart)) return;
         setTodayTokenName(name);
         setTodayTokenSymbol(symbol);
         setTodayTokenDecimals(Number(decimals) || 18);
         if (reverseFlag !== null) setReverseWindowActive(reverseFlag);
       } else {
         // No token scheduled today
+        if (!isScopeStillActive(scopeAtStart)) return;
         setTodayTokenAddress("");
         setTodayTokenSymbol("");
         setTodayTokenName("");
@@ -2056,6 +2361,7 @@ export const SwapContractProvider = ({ children }) => {
       }
     } catch (e) {
       console.debug("Error fetching today's token:", e);
+      if (!isScopeStillActive(scopeAtStart)) return;
       setTodayTokenAddress("");
       setTodayTokenSymbol("");
       setTodayTokenName("");
@@ -2435,6 +2741,7 @@ export const SwapContractProvider = ({ children }) => {
   };
   // Track previous address to detect wallet reconnect
   const prevAddressRef = useRef(null);
+  const prevDavIdRef = useRef(selectedDavId);
 
   useEffect(() => {
     // Prevent premature refresh while contracts are still loading or AuctionContract not ready
@@ -2445,9 +2752,14 @@ export const SwapContractProvider = ({ children }) => {
     // Detect wallet reconnect (address changes from null/undefined to a value)
     const didReconnect = !prevAddressRef.current && address;
     prevAddressRef.current = address;
+    const didDavSwitch = prevDavIdRef.current !== selectedDavId;
+    prevDavIdRef.current = selectedDavId;
 
     if (didReconnect) {
       console.log('🔄 Wallet reconnected, triggering immediate synchronized data refresh');
+    }
+    if (didDavSwitch) {
+      console.log('🔄 DAV deployment switched, forcing immediate auction data refresh');
     }
 
     // PRIORITY 0: Fast batch completion flag fetcher (replaces individual functions for speed)
@@ -2458,6 +2770,9 @@ export const SwapContractProvider = ({ children }) => {
       fetchUserTokenAddresses,  // Token map - essential
       fetchTodayToken,          // Today's token info
       getTokenRatio,            // Ratio display
+      getInputAmount,           // Auction box step values
+      getOutPutAmount,          // Auction box step values
+      getAirdropAmount,         // Auction box step values
       getCurrentAuctionCycle,   // Cycle count
       getTokenBalances,         // DAV Vault values
     ];
@@ -2473,9 +2788,6 @@ export const SwapContractProvider = ({ children }) => {
 
     // TERTIARY DATA - Least critical, load last
     const tertiaryFetchFunctions = [
-      getInputAmount,
-      getOutPutAmount,
-      getAirdropAmount,
       AddressesFromContract,
       isRenounced,
       getTokenNamesForUser,
@@ -2490,6 +2802,23 @@ export const SwapContractProvider = ({ children }) => {
 
     // Staged refresh: Load data in phases to prevent memory overload
     const runStagedRefresh = async (forceRefresh = false) => {
+      if (didDavSwitch) {
+        try {
+          await Promise.allSettled([
+            fetchUserTokenAddresses(),
+            fetchTodayToken(),
+            getTokenRatio(),
+            getInputAmount(),
+            getOutPutAmount(),
+            getAirdropAmount(),
+            CheckIsAuctionActive(),
+            CheckIsReverse(),
+          ]);
+        } catch (e) {
+          console.warn('Immediate DAV switch refresh encountered an error:', e);
+        }
+      }
+
       // STAGE 0 (PRIORITY): Load ALL completion flags in a single fast parallel batch
       // This is MUCH faster than calling 6 separate functions sequentially
       console.log('⚡ Stage 0: Loading completion flags (fast batch)...');
@@ -2513,6 +2842,8 @@ export const SwapContractProvider = ({ children }) => {
 
         // Also refresh DAV amounts and auction status for accurate subtitle display
         const liveFlagFns = [
+          fetchUserTokenAddresses,
+          getTokenRatio,
           getInputAmount,
           getOutPutAmount,
           getAirdropAmount,
@@ -2535,9 +2866,6 @@ export const SwapContractProvider = ({ children }) => {
         // Stage 1: Critical data (needed for basic display)
         await Promise.allSettled(criticalFetchFunctions.map(fn => fn()));
 
-        // Small delay before secondary data
-        await new Promise(resolve => setTimeout(resolve, 500));
-
         console.log('📊 Stage 2: Loading secondary data...');
         // Stage 2: Secondary data
         await Promise.allSettled([
@@ -2545,20 +2873,9 @@ export const SwapContractProvider = ({ children }) => {
           ...auctionStatusFunctions,
         ].map(fn => fn()));
 
-        // Longer delay before tertiary data to let browser breathe
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
         console.log('📊 Stage 3: Loading tertiary data...');
-        // Stage 3: Tertiary data - load in smaller batches
-        const batchSize = 5;
-        for (let i = 0; i < tertiaryFetchFunctions.length; i += batchSize) {
-          const batch = tertiaryFetchFunctions.slice(i, i + batchSize);
-          await Promise.allSettled(batch.map(fn => fn()));
-          // Small delay between batches
-          if (i + batchSize < tertiaryFetchFunctions.length) {
-            await new Promise(resolve => setTimeout(resolve, 300));
-          }
-        }
+        // Stage 3: fire remaining non-critical tasks in parallel
+        await Promise.allSettled(tertiaryFetchFunctions.map(fn => fn()));
 
         console.log('✅ All data loaded and cached');
       } catch (error) {
@@ -2616,7 +2933,7 @@ export const SwapContractProvider = ({ children }) => {
       try { window.removeEventListener('forceSynchronizedRefresh', handleForceRefresh); } catch { }
       runSyncRef.current = null;
     };
-  }, [AllContracts, address, loading, isCacheValid, TokenRatio]);
+  }, [AllContracts, address, loading, isCacheValid, TokenRatio, selectedDavId]);
 
   // Preview STATE out for reverse step 1 using on-chain reserves (matches ReverseAuctionCalculations)
   const estimateReverseStep1StateOut = useCallback(async (auctionTokenAddr, amountIn) => {
@@ -2750,6 +3067,9 @@ export const SwapContractProvider = ({ children }) => {
       const auctionAddr = getAuctionAddress();
       const tokenContract = getCachedContract(tokenAddress, 'ERC20_APPROVAL', signer);
 
+      // Use wallet/network suggested gas settings (no manual override)
+      const gasPriceOverride = {};
+
       // Check allowance; approve max if needed (tokensToBurn is computed on-chain)
       setButtonTextStates((prev) => ({ ...prev, [id]: "Checking allowance..." }));
       const allowance = await tokenContract.allowance(address, auctionAddr);
@@ -2757,7 +3077,7 @@ export const SwapContractProvider = ({ children }) => {
         try {
           setTxStatusForSwap("Approving");
           const maxUint256 = BigInt("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
-          const tx = await tokenContract.approve(auctionAddr, maxUint256);
+          const tx = await tokenContract.approve(auctionAddr, maxUint256, gasPriceOverride);
           await tx.wait();
         } catch (approvalErr) {
           console.error("Approval failed:", approvalErr);
@@ -2781,7 +3101,7 @@ export const SwapContractProvider = ({ children }) => {
         const burnFn = withSigner.getFunction('burnTokensForState()');
         // Simulation to catch on-chain errors early
         await burnFn.staticCall();
-        const burnTx = await burnFn();
+        const burnTx = await burnFn(gasPriceOverride);
         const receipt = await burnTx.wait();
 
         if (receipt.status === 1) {
@@ -4881,7 +5201,11 @@ export const SwapContractProvider = ({ children }) => {
     setClaiming,
     setDexSwappingStates,
   }), [
-    // Action functions are stable (wrapped in useCallback), no deps needed that change
+    // These deps ensure context refreshes when contracts become available.
+    // Action functions are plain async (not useCallback), so they close over
+    // AllContracts from the render scope — we need the useMemo to re-run
+    // after provider/signer/loading/address change so consumers get fresh refs.
+    provider, signer, loading, address,
   ]);
 
   return (

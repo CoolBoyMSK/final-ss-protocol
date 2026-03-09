@@ -23,6 +23,7 @@ import { notifyError } from "../../Constants/Constants";
 import { calculatePlsValueNumeric, formatNumber, formatWithCommas } from "../../Constants/Utils";
 import { calculateAmmValuesAsync } from "../../utils/workerManager";
 import { getDeploymentStatus, getRuntimeConfigSync } from "../../Constants/RuntimeConfig";
+import { getDavReclaimInfo } from "../../utils/davReclaimInfo";
 // Optimized: Use Zustand stores for selective subscriptions
 import { useDeploymentStore, useTokenStore, useAuctionStore } from "../../stores";
 
@@ -75,6 +76,7 @@ const AuctionSection = () => {
     const [load, setLoad] = useState(false);
     const [copied, setCopied] = useState(false);
     const [copiedCode, setCopiedCode] = useState("");
+    const [reservesUnclaimedWei, setReservesUnclaimedWei] = useState(null);
     const AuthAddress = import.meta.env.VITE_AUTH_ADDRESS;
     const [isGov, setIsGov] = useState(false);
     // Worker-based AMM estimate (null = not calculated yet)
@@ -89,25 +91,27 @@ const AuctionSection = () => {
 
     const davVariantInfo = useMemo(() => ({
         DAV1: {
-            label: `Sandbox (${getDavSymbol('DAV1')})`,
-            costPls: 3_000_000,
+            label: `JP Morgains (${getDavSymbol('DAV1')})`,            costPls: 5_000_000,
             userLimit: 2500,
-            yieldPct: 30,
+            yieldPct: 25,
+            airdrop: 10_000,
             comingSoon: !getDeploymentStatus(chainId, 'DAV1').ready,
         },
         DAV2: {
-            label: `JP Morgains (${getDavSymbol('DAV2')})`,
-            costPls: 5_000_000,
-            userLimit: 2500,
-            yieldPct: 25,
+            label: `GM Sachs (${getDavSymbol('DAV2')})`,
+            costPls: 10_000_000,
+            userLimit: 2000,
+            yieldPct: 50,
+            airdrop: 10_000,
             comingSoon: !getDeploymentStatus(chainId, 'DAV2').ready,
         },
         DAV3: {
             label: `Deutsche Bros (${getDavSymbol('DAV3')})`,
-            costPls: null,
-            userLimit: null,
-            yieldPct: null,
-            comingSoon: true,
+            costPls: 20_000_000,
+            userLimit: 1000,
+            yieldPct: 50,
+            airdrop: 15_000,
+            comingSoon: !getDeploymentStatus(chainId, 'DAV3').ready,
         },
     }), [chainId, getDavSymbol]);
 
@@ -149,10 +153,6 @@ const AuctionSection = () => {
 
     const handleMint = () => {
         // Pre-validations for better UX
-        if (selectedDav === "DAV3") {
-            notifyError("DAV 3 is coming soon");
-            return;
-        }
         if (!amount || amount.trim() === "") {
             notifyError("Enter mint amount");
             return;
@@ -337,6 +337,45 @@ const AuctionSection = () => {
         const pct = Math.trunc((estimatedPlsValue * 100) / requiredPlsValue);
         return String(pct >= 0 ? pct : 0);
     }, [estimatedPlsValue, requiredPlsValue]);
+
+    const davReadAddress = useMemo(() => {
+        const davContract = contracts?.dav || AllContracts?.DavContract || AllContracts?.dav;
+        if (davContract?.target) return davContract.target;
+        if (davContract?.address) return davContract.address;
+        return contracts?.addresses?.dav || null;
+    }, [contracts?.dav, contracts?.addresses?.dav, AllContracts?.DavContract, AllContracts?.dav]);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const run = async () => {
+            if (!provider) {
+                if (!cancelled) setReservesUnclaimedWei(null);
+                return;
+            }
+            const info = await getDavReclaimInfo(provider, davReadAddress);
+            if (!cancelled) {
+                const nextValue = info?.totalUnclaimed ?? null;
+                setReservesUnclaimedWei((prev) => (prev === nextValue ? prev : nextValue));
+            }
+        };
+
+        run();
+        return () => { cancelled = true; };
+    }, [provider, davReadAddress]);
+
+    const reservesDisplay = useMemo(() => {
+        if (selectedDavInfo.comingSoon) return "Coming Soon";
+        if (reservesUnclaimedWei === null) return null;
+        try {
+            const formatted = ethers.formatEther(BigInt(reservesUnclaimedWei));
+            const [wholePart] = String(formatted).split(".");
+            return `${formatWithCommas(wholePart || "0")} ${nativeSymbol}`;
+        } catch {
+            return `0 ${nativeSymbol}`;
+        }
+    }, [reservesUnclaimedWei, selectedDavInfo.comingSoon, nativeSymbol]);
+
     return (
         <div className="container mt-4">
             <div className="row g-4 d-flex align-items-stretch pb-1">
@@ -388,9 +427,9 @@ const AuctionSection = () => {
                                     onChange={handleDavSelectChange}
                                     style={{ height: "38px", color: "#ffffff", fontWeight: 400 }}
                                 >
-                                    <option value="DAV1">{`Sandbox (${getDavSymbol('DAV1')})`}</option>
-                                    <option value="DAV2">{`JP Morgains (${getDavSymbol('DAV2')})`}</option>
-                                    <option value="DAV3">{`Deutsche Bros (${getDavSymbol('DAV3')}) (Coming Soon)`}</option>
+                                    <option value="DAV1">{`JP Morgains (${getDavSymbol('DAV1')})`}</option>
+                                    <option value="DAV2">{`GM Sachs (${getDavSymbol('DAV2')})`}</option>
+                                    <option value="DAV3">{`Deutsche Bros (${getDavSymbol('DAV3')})`}</option>
                                 </select>
                                 <label htmlFor="davSelect" className="floating-label">
                                     Select DAV
@@ -517,6 +556,18 @@ const AuctionSection = () => {
                                         <span className="detailText">Yield = </span>
                                         <span className="second-span-fontsize">
                                             {selectedDavInfo.yieldPct === null ? "Coming Soon" : `${formatWithCommas(selectedDavInfo.yieldPct)}%`}
+                                        </span>
+                                    </p>
+                                    <p className="mb-1">
+                                        <span className="detailText">AIRDROP = </span>
+                                        <span className="second-span-fontsize">
+                                            {selectedDavInfo.airdrop === null ? "Coming Soon" : `${formatWithCommas(selectedDavInfo.airdrop)} TOKENS`}
+                                        </span>
+                                    </p>
+                                    <p className="mb-1">
+                                        <span className="detailText">RESERVES = </span>
+                                        <span className="second-span-fontsize">
+                                            {reservesDisplay === null ? <DotAnimation /> : reservesDisplay}
                                         </span>
                                     </p>
                                     <p className="mb-1 ">

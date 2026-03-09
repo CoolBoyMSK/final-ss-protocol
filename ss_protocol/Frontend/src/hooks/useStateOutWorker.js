@@ -80,6 +80,10 @@ export function useStateOutWorker(options = {}) {
     workerRef.current.onmessage = (event) => {
       const { type, result: workerResult, error: workerError, progress: workerProgress, requestId } = event.data;
 
+      if (requestId != null && requestId !== requestIdRef.current) {
+        return;
+      }
+
       console.log('[StateOutWorker] Received message:', type, workerResult || workerError || workerProgress);
 
       if (type === 'WORKER_READY') {
@@ -124,6 +128,8 @@ export function useStateOutWorker(options = {}) {
       if (saved) {
         savedResetBlock = parseInt(saved, 10);
         setResetBlock(savedResetBlock);
+      } else {
+        setResetBlock(null);
       }
       
       // Load cached result - use if less than 30 minutes old (as initial display while recalculating)
@@ -133,9 +139,16 @@ export function useStateOutWorker(options = {}) {
         if (parsed.cachedAt && Date.now() - parsed.cachedAt < 30 * 60 * 1000) {
           setResult(parsed);
           // Note: Don't set hasInitialized - let auto-start trigger a fresh calculation
+        } else {
+          setResult(null);
         }
+      } else {
+        setResult(null);
       }
-    } catch {}
+    } catch {
+      setResetBlock(null);
+      setResult(null);
+    }
 
     // Cleanup
     return () => {
@@ -256,12 +269,12 @@ export function useStateOutWorker(options = {}) {
   }, [storageKeyResetBlock, storageKeyCachedResult]);
 
   useEffect(() => {
+    // Invalidate any in-flight request from previous chain/DAV context
+    requestIdRef.current += 1;
     hasInitialized.current = false;
     setLoading(false);
     setProgress(0);
     setError(null);
-    setResult(null);
-    setResetBlock(null);
   }, [chainId, selectedDavId]);
 
   // Auto-start calculation (only once per mount)

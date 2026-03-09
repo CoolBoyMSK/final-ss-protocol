@@ -2,7 +2,7 @@ import React, { useMemo, useContext, useState, useEffect, useCallback, useRef } 
 import { ethers } from "ethers";
 import "../../Styles/AuctionBoxes.css";
 import { useSwapContract } from "../../Functions/SwapContractFunctions";
-import { useAuctionStore, useTokenStore, useUserStore } from "../../stores";
+import { useAuctionStore, useTokenStore, useUserStore, useDeploymentStore } from "../../stores";
 import { useAuctionTokens } from "../../data/auctionTokenData";
 import { formatWithCommas } from "../../Constants/Utils";
 import { useAccount, useChainId } from "wagmi";
@@ -12,6 +12,7 @@ import { useDAvContract } from "../../Functions/DavTokenFunctions";
 import { useStatePoolAddress } from "../../Functions/useStatePoolAddress";
 import { getDAVContractAddress, getSTATEContractAddress } from "../../Constants/ContractAddresses";
 import { getRuntimeConfigSync } from "../../Constants/RuntimeConfig";
+import { geckoTokenApiUrl } from "../../Constants/ExternalLinks";
 import { ERC20_ABI } from "../../Constants/Constants";
 import { chainCurrencyMap } from "../../../WalletConfig";
 import toast from "react-hot-toast";
@@ -84,11 +85,21 @@ const AuctionBoxes = ({ uiVariant } = {}) => {
 	const chainId = useChainId();
 	const TOKENS = useAllTokens();
 	const nativeSymbol = chainCurrencyMap[chainId] || 'PLS';
+	const selectedDavId = useDeploymentStore(state => state.selectedDavId);
+	const [plsUsdPrice, setPlsUsdPrice] = useState(null);
+	const switchFastUntilRef = useRef(0);
+	const prevDavIdRef = useRef(selectedDavId);
+	useEffect(() => {
+		if (prevDavIdRef.current !== selectedDavId) {
+			switchFastUntilRef.current = Date.now() + 3000;
+			prevDavIdRef.current = selectedDavId;
+		}
+	}, [selectedDavId]);
 	const activeDavSymbol = useMemo(() => {
 		const cfg = getRuntimeConfigSync();
 		return cfg?.contracts?.core?.DAV_V3?.symbol || 'DAV';
-	}, [chainId]);
-	const davTokenAddress = useMemo(() => getDAVContractAddress(chainId), [chainId]);
+	}, [chainId, selectedDavId]);
+	const davTokenAddress = useMemo(() => getDAVContractAddress(chainId), [chainId, selectedDavId]);
 	const addDavToMetaMask = useCallback(() => {
 		handleAddToken(davTokenAddress, activeDavSymbol, 18);
 	}, [handleAddToken, davTokenAddress, activeDavSymbol]);
@@ -106,6 +117,59 @@ const AuctionBoxes = ({ uiVariant } = {}) => {
 		if (pct >= 1) return 'On';
 		return 'Off';
 	}, [daiPct]);
+	const stateHoldingLabel = useMemo(() => {
+		switch (String(selectedDavId || 'DAV1').toUpperCase()) {
+			case 'DAV2':
+				return 'State 2 Holding - ';
+			case 'DAV3':
+				return 'State 3 Holding - ';
+			case 'DAV1':
+			default:
+				return 'State 1 Holding - ';
+		}
+	}, [selectedDavId]);
+
+	useEffect(() => {
+		let cancelled = false;
+
+		const run = async () => {
+			try {
+				const cfg = getRuntimeConfigSync();
+				const chainForGecko = Number(cfg?.network?.chainId || chainId || 0);
+				const baseTokenAddress = cfg?.dex?.baseToken?.address;
+				const url = geckoTokenApiUrl(chainForGecko, baseTokenAddress);
+				if (!url) {
+					if (!cancelled) setPlsUsdPrice(null);
+					return;
+				}
+
+				const response = await fetch(url, {
+					headers: { accept: 'application/json' },
+					cache: 'no-store',
+				});
+				if (!response.ok) throw new Error('Failed to fetch base token USD price');
+				const data = await response.json();
+				const raw = data?.data?.attributes?.price_usd;
+				const price = Number(raw);
+				if (!cancelled) setPlsUsdPrice(Number.isFinite(price) && price > 0 ? price : null);
+			} catch {
+				if (!cancelled) setPlsUsdPrice(null);
+			}
+		};
+
+		run();
+		return () => { cancelled = true; };
+	}, [chainId, selectedDavId]);
+
+	const roiUsdDisplay = useMemo(() => {
+		const roiPls = Number(String(roiTotalValuePls || 0).replace(/,/g, ''));
+		if (!Number.isFinite(roiPls) || !Number.isFinite(plsUsdPrice)) return '0.00';
+		const usdValue = Math.max(0, roiPls * plsUsdPrice);
+		return usdValue.toLocaleString(undefined, {
+			minimumFractionDigits: 2,
+			maximumFractionDigits: 2,
+		});
+	}, [roiTotalValuePls, plsUsdPrice]);
 
 	// Remove local todaySymbol/todayName/todayAddress/todayDecimals state
 	// Use centralized values from context instead
@@ -124,14 +188,68 @@ const AuctionBoxes = ({ uiVariant } = {}) => {
 		} catch { return null; }
 	}, []);
 
+
+	// Reset all stale local + store state when DAV deployment changes for instant visual feedback
+	useEffect(() => {
+		// Clear local component state
+		setReverseNow(null);
+		setLastKnownMode(null);
+		setDirectUnits(null);
+		setPairDiag({ status: 'loading' });
+		setReverseEstState(null);
+		setClaimableAmountCycleAware(0);
+		setConsumedUnitsCurrentCycle(0);
+		setRatioCycleBurnTokens(0);
+		setRatioCycleDavUnitsUsed(0);
+		// Clear debounce guards so fresh fetches fire immediately for the new DAV
+		lastReverseCheckRef.current = 0;
+		lastCycleAwareFetchRef.current = { key: null, timestamp: 0 };
+		lastRefreshRef.current = { id: null, timestamp: 0 };
+		lastRatioCycleFetchRef.current = { key: null, timestamp: 0 };
+		// Clear stale Zustand store data so header/step2/step3 values don't linger
+		useAuctionStore.getState().setBatch({
+			todayTokenAddress: '',
+			todayTokenSymbol: '',
+			todayTokenName: '',
+			todayTokenDecimals: 18,
+			reverseWindowActive: false,
+			AirDropAmount: {},
+			InputAmount: {},
+			OutPutAmount: {},
+			TotalCost: 0,
+			auctionTime: {},
+			AuctionTime: {},
+			CurrentCycleCount: 0,
+			isReversed: {},
+			IsAuctionActive: {},
+		});
+		useTokenStore.getState().setBatch({
+			tokenRatios: {},
+			tokenRatio: {},
+			TokenRatio: {},
+			RatioTargetsofTokens: {},
+			isReversed: {},
+			isAuctionActive: {},
+		});
+		useUserStore.getState().setBatch({
+			userHasSwapped: {},
+			userHasBurned: {},
+			userReverseStep1: {},
+			userReverseStep2: {},
+			userHasAirdropClaimed: {},
+			reverseStateMap: {},
+		});
+	}, [selectedDavId]);
+
 	// Continuously resolve reverse status for the active token (prefer SwapLens snapshot; fallback to on-chain)
 	// OPTIMIZED: Removed JSON.stringify(AuctionTime) - was causing re-fetch every second
 	const lastReverseCheckRef = useRef(0);
 	useEffect(() => {
 		let cancelled = false;
-		// Debounce: only check every 10 seconds max
+		const inFastWindow = Date.now() < (switchFastUntilRef.current || 0);
+		// Debounce: check frequently enough for responsive DAV switches
 		const now = Date.now();
-		if (now - lastReverseCheckRef.current < 10000) return;
+		if (!inFastWindow && now - lastReverseCheckRef.current < 2000) return;
 		lastReverseCheckRef.current = now;
 
 		(async () => {
@@ -171,7 +289,7 @@ const AuctionBoxes = ({ uiVariant } = {}) => {
 			}
 		})();
 		return () => { cancelled = true; };
-	}, [AllContracts?.AuctionContract, todayTokenAddress, reverseWindowActive]);
+	}, [AllContracts?.AuctionContract, todayTokenAddress, reverseWindowActive, selectedDavId]);
 
 	// Decide page-level mode: reverse if any token marked reversed and no normal auction active
 	const candidates = useMemo(() => {
@@ -302,7 +420,13 @@ const AuctionBoxes = ({ uiVariant } = {}) => {
 	const availableUnitsForToken = (mappedUnits && mappedUnits > 0)
 		? mappedUnits
 		: ((directUnits ?? 0) > 0 ? directUnits : 0);
-	const tokensPerDav = 3000; // from protocol constant TOKENS_PER_DAV
+	const _davIdUpper = String(selectedDavId || 'DAV1').toUpperCase();
+	const TOKENS_PER_DAV_BY_ID = {
+		DAV1: 2500,
+		DAV2: 5000,
+		DAV3: 7500,
+	};
+	const tokensPerDav = TOKENS_PER_DAV_BY_ID[_davIdUpper] || TOKENS_PER_DAV_BY_ID.DAV1;
 	const burnAmount = availableUnitsForToken * tokensPerDav; // tokens to burn if using all available DAV units
 
 	// Diagnose why live ratio is unavailable (declare early to avoid TDZ in hooks below)
@@ -354,7 +478,10 @@ const AuctionBoxes = ({ uiVariant } = {}) => {
 
 	// Prefer full names where available
 	const selectedDisplayName = useMemo(() => {
-		if (!selected) return todayTokenName || todayTokenSymbol || "";
+		const selectedAddr = ((TOKENS?.[selected?.id]?.address) || selected?.address || "").toLowerCase();
+		const todayAddr = (todayTokenAddress || "").toLowerCase();
+		const shouldPreferToday = Boolean(todayAddr) && selectedAddr !== todayAddr;
+		if (!selected || shouldPreferToday) return todayTokenName || todayTokenSymbol || "";
 		return (
 			TOKENS?.[selected.id]?.displayName ||
 			TOKENS?.[selected.id]?.name ||
@@ -362,7 +489,9 @@ const AuctionBoxes = ({ uiVariant } = {}) => {
 			selected.name ||
 			selected.id
 		);
-	}, [selected, TOKENS, todayTokenName, todayTokenSymbol]); useEffect(() => {
+	}, [selected, TOKENS, todayTokenAddress, todayTokenName, todayTokenSymbol]);
+
+	useEffect(() => {
 		let cancelled = false;
 		(async () => {
 			try {
@@ -480,8 +609,9 @@ const AuctionBoxes = ({ uiVariant } = {}) => {
 	useEffect(() => {
 		const now = Date.now();
 		const tokenId = selected?.id || todayTokenAddress;
+		const inFastWindow = now < (switchFastUntilRef.current || 0);
 		// Only refresh if token changed OR 30 seconds passed
-		if (lastRefreshRef.current.id === tokenId && now - lastRefreshRef.current.timestamp < 30000) {
+		if (!inFastWindow && lastRefreshRef.current.id === tokenId && now - lastRefreshRef.current.timestamp < 30000) {
 			return;
 		}
 		lastRefreshRef.current = { id: tokenId, timestamp: now };
@@ -493,14 +623,21 @@ const AuctionBoxes = ({ uiVariant } = {}) => {
 		// Refresh airdrop claimable amounts for Step 1 correctness
 		try { getAirdropAmount?.(); } catch { }
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [selected?.id, todayTokenAddress, address, davHolds]);
+	}, [selected?.id, todayTokenAddress, address, davHolds, selectedDavId]);
 
 	// Compute dynamic airdrop/ratio texts with fixed phrasing, but prevent post-action values from dropping to 0
-	const selectedKey = selected?.id || todayTokenSymbol || "";
-	const selectedAddrKey = (TOKENS?.[selected?.id]?.address) || selected?.address || todayTokenAddress || "";
-	const availableUnits = availableUnitsForToken;
 	// Read AIRDROP_PER_DAV on-chain to avoid hardcoding
 	const [airdropPerDav, setAirdropPerDav] = useState(10000);
+	// Set correct fallback per DAV before on-chain read resolves
+	useEffect(() => {
+		const davId = String(selectedDavId || 'DAV1').toUpperCase();
+		const AIRDROP_PER_DAV_FALLBACK = {
+			DAV1: 10000,
+			DAV2: 10000,
+			DAV3: 15000,
+		};
+		setAirdropPerDav(AIRDROP_PER_DAV_FALLBACK[davId] || AIRDROP_PER_DAV_FALLBACK.DAV1);
+	}, [selectedDavId]);
 	useEffect(() => {
 		let cancelled = false;
 		(async () => {
@@ -514,6 +651,17 @@ const AuctionBoxes = ({ uiVariant } = {}) => {
 		return () => { cancelled = true; };
 	}, [AllContracts?.airdropDistributor]);
 
+	const claimPerUnit = airdropPerDav; // on-chain constant when available
+	const fullTokenName = (selected?.name && selected?.name !== selected?.id ? selected?.name : null)
+		|| TOKENS?.[selected?.id]?.name
+		|| todayTokenName
+		|| selected?.id
+		|| todayTokenSymbol
+		|| "";
+
+	// We use fullTokenName exclusively for UI strings (header, buttons) to avoid stale store values on DAV switch
+	const selectedAddrKey = (TOKENS?.[selected?.id]?.address) || selected?.address || todayTokenAddress || "";
+
 	// Cycle-aware airdrop display: before claim show claimable (newUnits * perDav), after claim show consumedUnitsCurrentCycle * perDav
 	const [claimableAmountCycleAware, setClaimableAmountCycleAware] = useState(0);
 	const [consumedUnitsCurrentCycle, setConsumedUnitsCurrentCycle] = useState(0);
@@ -522,9 +670,10 @@ const AuctionBoxes = ({ uiVariant } = {}) => {
 	useEffect(() => {
 		let cancelled = false;
 		const now = Date.now();
+		const inFastWindow = now < (switchFastUntilRef.current || 0);
 		// Only fetch if address/token changed OR 30 seconds passed
-		const fetchKey = `${address}-${selectedAddrKey}`;
-		if (lastCycleAwareFetchRef.current.key === fetchKey && now - lastCycleAwareFetchRef.current.timestamp < 30000) {
+		const fetchKey = `${selectedDavId}-${address}-${selectedAddrKey}`;
+		if (!inFastWindow && lastCycleAwareFetchRef.current.key === fetchKey && now - lastCycleAwareFetchRef.current.timestamp < 30000) {
 			return;
 		}
 		lastCycleAwareFetchRef.current = { key: fetchKey, timestamp: now };
@@ -557,13 +706,7 @@ const AuctionBoxes = ({ uiVariant } = {}) => {
 			}
 		})();
 		return () => { cancelled = true; };
-	}, [address, AllContracts?.airdropDistributor, selectedAddrKey]);
-
-	const claimPerUnit = airdropPerDav; // on-chain constant when available
-	const fullTokenName = (selected?.name && selected?.name !== selected?.id ? selected?.name : null)
-		|| TOKENS?.[selected?.id]?.name
-		|| todayTokenName
-		|| selectedKey;
+	}, [address, AllContracts?.airdropDistributor, selectedAddrKey, selectedDavId]);
 
 	// Cycle-aware Ratio Swap display (Step 2): after burning, keep showing values based on consumed units/tokens this cycle
 	const [ratioCycleBurnTokens, setRatioCycleBurnTokens] = useState(0);
@@ -573,9 +716,10 @@ const AuctionBoxes = ({ uiVariant } = {}) => {
 	useEffect(() => {
 		let cancelled = false;
 		const now = Date.now();
-		const fetchKey = `${address}-${selectedAddrKey}`;
+		const inFastWindow = now < (switchFastUntilRef.current || 0);
+		const fetchKey = `${selectedDavId}-${address}-${selectedAddrKey}`;
 		// Only fetch if key changed OR 30 seconds passed
-		if (lastRatioCycleFetchRef.current.key === fetchKey && now - lastRatioCycleFetchRef.current.timestamp < 30000) {
+		if (!inFastWindow && lastRatioCycleFetchRef.current.key === fetchKey && now - lastRatioCycleFetchRef.current.timestamp < 30000) {
 			return;
 		}
 		lastRatioCycleFetchRef.current = { key: fetchKey, timestamp: now };
@@ -609,7 +753,7 @@ const AuctionBoxes = ({ uiVariant } = {}) => {
 			}
 		})();
 		return () => { cancelled = true; };
-	}, [address, AllContracts?.AuctionContract, selectedAddrKey, todayTokenDecimals, TOKENS, selected?.id]);
+	}, [address, AllContracts?.AuctionContract, selectedAddrKey, todayTokenDecimals, TOKENS, selected?.id, selectedDavId]);
 
 	// Sticky (non-zero) display values to avoid showing 0 after steps complete; reset when token selection changes
 	const [stickyVals, setStickyVals] = useState({ airdrop: null, burn: null, est: null });
@@ -981,7 +1125,7 @@ const AuctionBoxes = ({ uiVariant } = {}) => {
 							}}
 						>
 							<p className="mb-1">
-								<span className="detailText">State Token Holding - </span>
+								<span className="detailText">{stateHoldingLabel}</span>
 								<span className="second-span-fontsize">{formatWithCommas(stateHolding)}</span>
 							</p>
 							<p className="mb-1">
@@ -1000,6 +1144,10 @@ const AuctionBoxes = ({ uiVariant } = {}) => {
 										{formatWithCommas(String(roiTotalValuePls || 0))} {nativeSymbol}
 									</span>
 								</span>
+							</p>
+							<p className="mb-1">
+								<span className="detailText">ROI / $ -</span>
+								<span className="ms-1 second-span-fontsize">${roiUsdDisplay}</span>
 							</p>
 							<p className="mb-1">
 								<span className="detailText">USER ROI % -</span>

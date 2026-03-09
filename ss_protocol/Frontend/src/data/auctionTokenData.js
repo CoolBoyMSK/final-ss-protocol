@@ -3,7 +3,7 @@ import { generateIdenticon } from "../utils/identicon";
 import { isImageUrl } from "../Constants/Constants";
 import { useSwapContract } from "../Functions/SwapContractFunctions";
 import { useDAvContract } from "../Functions/DavTokenFunctions";
-import { useTokenStore, useAuctionStore, useUserStore } from "../stores";
+import { useTokenStore, useAuctionStore, useUserStore, useDeploymentStore } from "../stores";
 
 export const useAuctionTokens = () => {
 	// Use context directly for reliable immediate data access
@@ -23,6 +23,7 @@ export const useAuctionTokens = () => {
 	const tokenMap = useTokenStore(state => state.tokenMap);
 
 	const { Emojies, names } = useDAvContract();
+	const selectedDavId = useDeploymentStore(state => state.selectedDavId);
 	const [loading, setLoading] = useState(true);
 	const [cachedTokens, setCachedTokens] = useState([]); // store last known good state
 	const prevSnapshotRef = useRef(null); // for shallow compare
@@ -89,9 +90,16 @@ export const useAuctionTokens = () => {
 	// OPTIMIZED: Debounced cache update - only update if meaningful change detected
 	const lastUpdateRef = useRef(0);
 	useEffect(() => {
-		// Debounce: don't update more than once per second
+		setCachedTokens([]);
+		prevSnapshotRef.current = null;
+		lastUpdateRef.current = 0;
+		setLoading(true);
+	}, [selectedDavId]);
+
+	useEffect(() => {
+		// Debounce: keep responsive updates during DAV switches
 		const now = Date.now();
-		if (now - lastUpdateRef.current < 1000) return;
+		if (now - lastUpdateRef.current < 60) return;
 
 		const snapshot = JSON.stringify(newTokenConfigs);
 		if (prevSnapshotRef.current !== snapshot) {

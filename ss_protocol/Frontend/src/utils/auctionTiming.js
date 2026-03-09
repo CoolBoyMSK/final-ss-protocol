@@ -327,20 +327,20 @@ export function invalidateTimingCache() {
 }
 
 // ===== Manual schedule support =====
-// Anchor: 2025-12-08 17:00 GMT+3 = 2025-12-08 14:00:00 UTC
+// Anchor: 2026-02-28 17:00 GMT+3 = 2026-02-28 14:00:00 UTC
 let MANUAL_ANCHOR_UTC = 0;
 try {
-  const ts = Date.parse('2025-12-08T14:00:00Z');
+  const ts = Date.parse('2026-02-28T14:00:00Z');
   if (!Number.isNaN(ts)) MANUAL_ANCHOR_UTC = Math.floor(ts / 1000);
 } catch {}
 if (!MANUAL_ANCHOR_UTC) {
-  // Fallback hardcoded epoch if Date parsing unavailable (Dec 8, 2025 14:00:00 UTC)
+  // Fallback hardcoded epoch if Date parsing unavailable (Feb 28, 2026 14:00:00 UTC)
   // Keep zero if unknown to force recompute by caller
-  MANUAL_ANCHOR_UTC = 1765202400;
+  MANUAL_ANCHOR_UTC = 1772287200;
 }
 
 /**
- * Compute manual auction phase from a fixed anchor (17:00 GMT+3 on Dec 8, 2025 = 14:00 UTC).
+ * Compute manual auction phase from a fixed anchor (17:00 GMT+3 on Feb 28, 2026 = 14:00 UTC).
  * - duration: 24 hours (86400)
  * - interval: 0 (continuous auctions)
  * - slot = 24 hours (duration + interval)

@@ -6,6 +6,7 @@ import AuctionAdminABI from "../../ABI/AuctionAdmin.json";
 import AuctionSwapABI from "../../ABI/AuctionSwap.fixed.json";
 import AirdropDistributorABI from "../../ABI/AirdropDistributor.json";
 import DavTokenABI from "../../ABI/DavToken_updated.json";
+import { getDavReclaimInfo } from "../../utils/davReclaimInfo";
 
 export default function GovernancePage() {
   const { provider, signer, contracts, AllContracts } = useContext(ContractContext);
@@ -310,79 +311,8 @@ export default function GovernancePage() {
         return;
       }
       
-      const abi = DavTokenABI.abi || DavTokenABI;
-      const dav = new ethers.Contract(addr, abi, provider);
-      
-      try {
-        // Primary on-chain view call using full ABI first
-        let raw = await dav.getReclaimInfo();
-        // If full ABI failed to decode (not thrown but undefined), try minimal ABI
-        if (!raw || (Array.isArray(raw) && raw.length === 0)) {
-          try {
-            const minimal = new ethers.Contract(addr, ["function getReclaimInfo() view returns (bool,uint256,uint256)"], provider);
-            raw = await minimal.getReclaimInfo();
-          } catch (miniErr) {
-            throw miniErr; // bubble to outer catch
-          }
-        }
-        const tuple = Array.isArray(raw) ? raw : [raw?.canReclaim, raw?.daysRemaining, raw?.totalUnclaimed];
-        const canReclaim = Boolean(tuple[0]);
-        const daysRemaining = Number(tuple[1] || 0);
-        const totalUnclaimedWei = tuple[2] !== undefined && tuple[2] !== null ? tuple[2] : 0n;
-        let totalBn;
-        try {
-          if (typeof totalUnclaimedWei === 'bigint') totalBn = totalUnclaimedWei; else totalBn = BigInt(totalUnclaimedWei.toString());
-        } catch { totalBn = 0n; }
-        console.log('[DAV getReclaimInfo] canReclaim=', canReclaim, 'daysRemaining=', daysRemaining, 'totalUnclaimedWei=', totalBn.toString());
-        setReclaimInfo({ canReclaim, daysRemaining, totalUnclaimed: totalBn });
-      } catch (contractError) {
-        // Contract call failed - implement client-side calculation as fallback
-        console.log('Contract getReclaimInfo failed, using client-side calculation');
-        
-        try {
-          // Get swap contract address
-          const swapAddr = await dav.swapContract();
-          
-          if (!swapAddr || swapAddr === ethers.ZeroAddress) {
-            setReclaimInfo({ canReclaim: false, daysRemaining: 999999, totalUnclaimed: 0n });
-            return;
-          }
-          
-          // Get auction schedule from SWAP contract
-          const swapAbi = ['function auctionSchedule() view returns (bool,uint256,uint256,uint256,uint256)'];
-          const swap = new ethers.Contract(swapAddr, swapAbi, provider);
-          const schedule = await swap.auctionSchedule();
-          
-          const scheduleSet = schedule[0];
-          const scheduleStart = schedule[1];
-          
-          if (!scheduleSet || scheduleStart === 0n) {
-            setReclaimInfo({ canReclaim: false, daysRemaining: 999999, totalUnclaimed: 0n });
-            return;
-          }
-          
-          // Calculate days since auction start
-          const currentBlock = await provider.getBlock('latest');
-          const currentTimestamp = BigInt(currentBlock.timestamp);
-          const daysSinceStart = (currentTimestamp - scheduleStart) / 86400n; // 1 day in seconds
-          
-          let canReclaim, daysRemaining;
-          if (daysSinceStart >= 3n) {
-            canReclaim = true;
-            daysRemaining = 0;
-          } else {
-            canReclaim = false;
-            daysRemaining = Number(3n - daysSinceStart);
-          }
-          
-          // Get total unclaimed from holderFunds (if accessible, otherwise 0)
-          // Fallback: cannot compute total unclaimed; present 0 for clarity
-          setReclaimInfo({ canReclaim, daysRemaining, totalUnclaimed: 0n });
-        } catch (fallbackError) {
-          console.error('Client-side calculation also failed:', fallbackError);
-          setReclaimInfo({ canReclaim: false, daysRemaining: 999999, totalUnclaimed: 0n });
-        }
-      }
+      const info = await getDavReclaimInfo(provider, addr);
+      setReclaimInfo(info);
     } catch (e) {
       console.error('fetchDavReclaimInfo error:', e);
       setReclaimInfo({ canReclaim: null, daysRemaining: null, totalUnclaimed: null });

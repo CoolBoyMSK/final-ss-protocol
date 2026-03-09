@@ -503,15 +503,18 @@ const SwapComponent = ({ preselectToken, onSwapSuccess }) => {
   // Single-box layout (Uniswap-like)
   return (
     <>
-      <div className="container mt-4">
-        <div className="dex-swap-card bg-dark text-light border-light p-3 rounded-4" style={{ maxWidth: "760px", margin: "0 auto" }}>
+      <div className="container mt-4" style={{ marginTop: 0 }}>
+        <div
+          className="dex-swap-card bg-dark text-light border-light p-3 rounded-4"
+          style={{ width: "100%", maxWidth: "100%", height: "447px", margin: "0 auto", overflow: "hidden" }}
+        >
           {/* Top panel: Sell (tokenIn) */}
           <div className="swap-panel p-3" style={{ background: "#0f0f10", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.08)" }}>
             <div className="d-flex align-items-center justify-content-between mb-2" style={{ flexWrap: 'wrap', rowGap: '6px' }}>
               <span className="text-light" style={{ fontWeight: 600, letterSpacing: '0.2px', fontSize: '1.1rem' }}>Sell</span>
-              <div className="d-inline-flex align-items-center gap-2 px-3 py-1 rounded-3" style={{ border: '1px solid rgba(255,255,255,0.08)', maxWidth: '75%' }}>
+              <div className="d-inline-flex align-items-center gap-2 px-3 py-1 rounded-3" style={{ border: '1px solid rgba(255,255,255,0.08)', maxWidth: '75%', minHeight: '40px' }}>
                 {getTokenLogo(tokenIn)}
-                <span style={{ fontWeight: 600, fontSize: "1rem", whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+                <span style={{ fontWeight: 600, fontSize: "1rem", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '220px', display: 'block' }}>
                   {TOKENS[tokenIn]?.displayName || TOKENS[tokenIn]?.name || tokenIn}
                 </span>
               </div>
@@ -533,16 +536,27 @@ const SwapComponent = ({ preselectToken, onSwapSuccess }) => {
                 disabled={isApproving || isSwapping}
               />
             </div>
-            <div className="d-flex justify-content-between mt-2">
-              <small className="text-light" style={{ fontWeight: 500, fontSize: '0.9rem' }}>
+            <div className="mt-2" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 170px', alignItems: 'center', columnGap: '10px', minHeight: '24px' }}>
+              <small
+                className="text-light"
+                style={{
+                  fontWeight: 500,
+                  fontSize: '0.9rem',
+                  minWidth: 0,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  display: 'block'
+                }}
+              >
                 {ratioOutPerIn
                   ? `1 ${getFullTokenName(tokenIn)} ≈ ${Number(ratioOutPerIn).toFixed(6)} ${getFullTokenName(tokenOut)}`
                   : "Fetching ratio..."}
               </small>
-              <div className="d-flex align-items-center gap-2" style={{ position: "relative" }}>
+              <div className="d-flex align-items-center justify-content-end gap-2" style={{ position: "relative", width: '170px', flexShrink: 0 }}>
                 <small
                   className="text-light"
-                  style={{ opacity: (isApproving || isSwapping) ? 0.7 : 1, fontWeight: 500, fontSize: '0.9rem' }}
+                  style={{ opacity: (isApproving || isSwapping) ? 0.7 : 1, fontWeight: 500, fontSize: '0.9rem', whiteSpace: 'nowrap' }}
                 >
                   Bal: {tokenInBalance ? `${parseFloat(tokenInBalance).toFixed(2)}` : "-"}
                 </small>
@@ -648,9 +662,9 @@ const SwapComponent = ({ preselectToken, onSwapSuccess }) => {
           <div className="swap-panel p-3 mt-0" style={{ background: "#0f0f10", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.08)" }}>
             <div className="d-flex align-items-center justify-content-between mb-2" style={{ flexWrap: 'wrap', rowGap: '6px' }}>
               <span className="text-light" style={{ fontWeight: 600, letterSpacing: '0.2px', fontSize: '1.1rem' }}>Buy</span>
-              <div className="d-inline-flex align-items-center gap-2 px-3 py-1 rounded-3" style={{ border: '1px solid rgba(255,255,255,0.08)', maxWidth: '75%' }}>
+              <div className="d-inline-flex align-items-center gap-2 px-3 py-1 rounded-3" style={{ border: '1px solid rgba(255,255,255,0.08)', maxWidth: '75%', minHeight: '40px' }}>
                 {getTokenLogo(tokenOut)}
-                <span style={{ fontWeight: 600, fontSize: "1rem", whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+                <span style={{ fontWeight: 600, fontSize: "1rem", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '220px', display: 'block' }}>
                   {TOKENS[tokenOut]?.displayName || TOKENS[tokenOut]?.name || tokenOut}
                 </span>
               </div>

@@ -573,6 +573,8 @@ const DetailsInfo = ({ selectedToken }) => {
 };
 
 const DetailsInfoFull = ({ selectedToken }) => {
+  const location = useLocation();
+  const isDavVaultRoute = location.pathname === "/auction" || location.pathname === "/dav-vault";
   // Use selective store access instead of full context (reduces re-renders)
   const pstateToPlsRatio = useTokenStore(state => state.pstateToPlsRatio);
   const {
@@ -730,7 +732,7 @@ const DetailsInfoFull = ({ selectedToken }) => {
     notifySuccess("Data refreshed!");
   }, []);
   return (
-    <div className="container mt-3 p-0 pb-4 mb-5">
+    <div className={`container mt-3 p-0 pb-4 mb-5 ${isDavVaultRoute ? "details-info-auction-shell" : ""}`}>
       <div className="mb-3 d-flex justify-content-center align-items-center gap-3 dex-search-bar-row">
         <input
           type="text"
@@ -742,7 +744,7 @@ const DetailsInfoFull = ({ selectedToken }) => {
         />
       </div>
 
-      <div className={`table-responsive ${isInfoPage ? "info-page" : ""}`}>
+      <div className={`table-responsive ${isInfoPage ? "info-page" : ""} ${isDavVaultRoute ? "details-info-auction-table-box" : ""}`}>
         {dataToShow ? (
           <>
             <table className="table">

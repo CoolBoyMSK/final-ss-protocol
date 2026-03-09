@@ -376,10 +376,14 @@ export default function BuyBurnSetupPage() {
       if (!amount) { notifyError('Enter PLS amount to send'); return; }
       let wei;
       try { wei = ethers.parseEther(amount); if (wei <= 0n) throw new Error(''); } catch { notifyError('Invalid amount'); return; }
-      const runner = BuyAndBurnController?.runner;
-      if (!runner || typeof runner.sendTransaction !== 'function') { notifyError('Wallet not connected to send PLS'); return; }
+      const txSender =
+        (signer && typeof signer.sendTransaction === 'function' ? signer : null) ||
+        (BuyAndBurnController?.runner && typeof BuyAndBurnController.runner.sendTransaction === 'function'
+          ? BuyAndBurnController.runner
+          : null);
+      if (!txSender) { notifyError('Wallet not connected to send PLS'); return; }
       setSendingPls(true);
-      const tx = await runner.sendTransaction({ to: ctrlAddr, value: wei });
+      const tx = await txSender.sendTransaction({ to: ctrlAddr, value: wei });
       txToast('Send PLS submitted', tx.hash);
       await tx.wait();
       notifySuccess('PLS sent to controller');
@@ -578,24 +582,25 @@ export default function BuyBurnSetupPage() {
 
       let tx;
       if (plsBal > 0n) {
-        // Convert specified PLS amount -> WPLS and execute in one call
-        // If user provided an amount, prefer that; otherwise use full available PLS
-        let amountWei = plsBal;
-        if ((plsToUse ?? "").trim().length > 0) {
-          try {
-            const entered = ethers.parseEther(plsToUse.trim());
-            if (entered <= 0n) {
-              setLoading(false);
-              return notifyError("PLS amount must be greater than 0");
-            }
-            if (entered > plsBal) {
-              return notifyError("Entered PLS exceeds controller balance");
-            }
-            amountWei = entered;
-          } catch {
+        // PLS amount is required
+        if ((plsToUse ?? "").trim().length === 0) {
+          setLoading(false);
+          return notifyError("PLS amount is required");
+        }
+        let amountWei;
+        try {
+          amountWei = ethers.parseEther(plsToUse.trim());
+          if (amountWei <= 0n) {
             setLoading(false);
-            return notifyError("Invalid PLS amount format");
+            return notifyError("PLS amount must be greater than 0");
           }
+          if (amountWei > plsBal) {
+            setLoading(false);
+            return notifyError("Entered PLS exceeds controller balance");
+          }
+        } catch {
+          setLoading(false);
+          return notifyError("Invalid PLS amount format");
         }
         tx = await BuyAndBurnController.executeFullBuyAndBurn(amountWei);
         console.log("Execute Full Buy & Burn tx:", tx.hash);
@@ -873,8 +878,9 @@ export default function BuyBurnSetupPage() {
                     value={plsToUse}
                     onChange={(e) => setPlsToUse(e.target.value)}
                     title="Enter the PLS amount to use"
+                    required
                   />
-                  <small className="text-muted">Required: enter the PLS amount to use</small>
+                  <small className="text-muted"> Required: enter the PLS amount to use</small>
                 </div>
                 <div className="col-md-3 d-flex align-items-center">
                   <button
