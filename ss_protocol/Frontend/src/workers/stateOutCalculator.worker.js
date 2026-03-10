@@ -11,9 +11,9 @@
 
 // Default RPC endpoints for fallback if request doesn't pass one
 const DEFAULT_RPC_ENDPOINTS = [
-  'https://rpc.pulsechain.com',
   'https://pulsechain-rpc.publicnode.com',
-  'https://rpc-pulsechain.g4mm4.io'
+  'https://rpc-pulsechain.g4mm4.io',
+  'https://rpc.pulsechain.com'
 ];
 
 let activeRpcEndpoints = [...DEFAULT_RPC_ENDPOINTS];

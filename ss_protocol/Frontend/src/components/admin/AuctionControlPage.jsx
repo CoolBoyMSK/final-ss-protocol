@@ -26,9 +26,9 @@ export default function AuctionControlPage() {
 
   const startScheduleByDav = {
     DAV1: {
-      display: "Feb 28, 2026 - 5:00 PM GMT+3",
+      display: "Mar 14, 2026 - 5:00 PM GMT+3",
       tz: "5:00 PM GMT+3",
-      targetUtc: "2026-02-28T14:00:00Z",
+      targetUtc: "2026-03-14T14:00:00Z",
     },
     DAV2: {
       display: "Mar 1, 2026 - 5:00 PM GMT+3",

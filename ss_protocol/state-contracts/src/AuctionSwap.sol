@@ -120,7 +120,7 @@ contract SWAP_V3 is Ownable, ReentrancyGuard, SwapErrors, SwapEvents {
     uint256 public totalAuctionsCompleted = 0;
     
     // Unified user registration system
-    mapping(address => bool) public isRegisteredForAuctions; // Auto-registered during first participation (max 5000)
+    mapping(address => bool) public isRegisteredForAuctions; // Auto-registered during first participation (maxAuctionParticipants)
     uint256 public totalRegisteredUsers = 0; // Counter for auto-registered users
     mapping(uint256 => uint256) public stateReleasedByDayIndex;
     mapping(uint256 => uint256) public stateReleasedNormalByDayIndex;
@@ -613,7 +613,7 @@ contract SWAP_V3 is Ownable, ReentrancyGuard, SwapErrors, SwapEvents {
     /**
      * @notice Auto-register user for auction participation
      * @param user User address to register
-     * @dev First-come-first-served registration up to maxAuctionParticipants limit (2500)
+    * @dev First-come-first-served registration up to maxAuctionParticipants limit (2500)
      */
     function _autoRegisterUser(address user) internal {
         if (!isRegisteredForAuctions[user]) {
@@ -1096,7 +1096,7 @@ contract SWAP_V3 is Ownable, ReentrancyGuard, SwapErrors, SwapEvents {
     /**
      * @notice Update maximum auction participant limit
      * @param newMax New maximum participant count (must be >= current registered users)
-     * @dev Governance-only function to adjust participant cap (default 2500)
+    * @dev Governance-only function to adjust participant cap (default 2500)
      */
     function setMaxAuctionParticipants(uint256 newMax) external onlyGovernance {
         if (newMax == 0) revert InvalidParam();

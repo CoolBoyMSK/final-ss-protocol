@@ -37,8 +37,8 @@ contract STATE_V3 is ERC20, Ownable(msg.sender) {
     // ============ Constructor ============
     
     /// @notice Deploys STATE token with entire supply minted to recipient
-    /// @param tokenName Human-readable token name (e.g., "PulseState1")
-    /// @param tokenSymbol Token ticker symbol (e.g., "pSTATE1")
+    /// @param tokenName Human-readable token name (e.g., "pulseSTATE01")
+    /// @param tokenSymbol Token ticker symbol (e.g., "pSTATE01")
     /// @param recipient Address receiving 100% of supply (SWAP_V3 auction contract)
     /// @dev Constructor operations (atomic transaction):
     ///      1. Validate recipient address (non-zero)

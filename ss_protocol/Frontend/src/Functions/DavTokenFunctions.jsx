@@ -952,7 +952,7 @@ export const DavProvider = ({ children }) => {
                     symbol: (rc?.dex?.baseToken?.symbol || 'PLS'),
                     decimals: rc?.dex?.baseToken?.decimals || 18,
                   },
-                  rpcUrls: [rc?.network?.rpcUrl].filter(Boolean),
+                  rpcUrls: rc?.network?.rpcUrls?.filter(Boolean) || [rc?.network?.rpcUrl].filter(Boolean),
                   blockExplorerUrls: [rc?.network?.explorerUrl].filter(Boolean),
                 }]);
               } catch {}
@@ -1161,7 +1161,7 @@ export const DavProvider = ({ children }) => {
                   symbol: (rc?.dex?.baseToken?.symbol || 'PLS'),
                   decimals: rc?.dex?.baseToken?.decimals || 18,
                 },
-                rpcUrls: [rc?.network?.rpcUrl].filter(Boolean),
+                rpcUrls: rc?.network?.rpcUrls?.filter(Boolean) || [rc?.network?.rpcUrl].filter(Boolean),
                 blockExplorerUrls: [rc?.network?.explorerUrl].filter(Boolean),
               }]);
             } catch {}

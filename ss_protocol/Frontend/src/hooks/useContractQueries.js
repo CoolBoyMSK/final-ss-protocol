@@ -20,7 +20,7 @@ import { ERC20_ABI } from '../ABI/erc20';
 // Get provider from window or create new one
 const getProvider = () => {
   if (window.cachedProvider) return window.cachedProvider;
-  return new ethers.JsonRpcProvider('https://rpc.pulsechain.com');
+  return new ethers.JsonRpcProvider('https://pulsechain-rpc.publicnode.com');
 };
 
 /**

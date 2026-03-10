@@ -45,10 +45,10 @@ interface IPair {
  *
  * @custom:features
  * - Time-Limited Access: 30-day expiry from mint (refreshed on governance transfers)
- * - Holder Rewards: 10% of mint fees distributed proportionally to active DAV holders
+ * - Holder Rewards: 15% of mint fees distributed proportionally to active DAV holders
  * - Referral System: 5% bonus added to referrer's claimable rewards
  * - ROI Verification: Portfolio value must meet or exceed DAV mint cost to claim rewards
- * - Buy & Burn: 80% of mint fees sent to BuyAndBurnController for STATE buyback
+ * - Buy & Burn: 75% of mint fees sent to BuyAndBurnController for STATE buyback
  * - Batch Tracking: Complete mint/expiry history preserved for transparency
  *
  * @custom:architecture
@@ -61,12 +61,12 @@ interface IPair {
  * Intentionally prioritizes transparency and accuracy over gas optimization:
  * - Real-time calculations via iteration (no caching)
  * - Complete mint history preserved (including expired batches)
- * - Bounded by MAX_HOLDERS = 2,500 wallets
+ * - Bounded by MAX_HOLDERS = 1,000 wallets
  * - PulseChain context: extremely low gas costs (1 PLS ≈ 0.00000396 ETH)
  *
  * @custom:workflow
  * 1. User mints DAV by paying 5,000,000 PLS per token
- * 2. Funds distributed: 80% buyback, 10% holders, 5% dev, 5% referral
+ * 2. Funds distributed: 75% buyback, 15% holders, 5% dev, 5% referral
  * 3. DAV expires after 30 days (refreshed if transferred from governance)
  * 4. Holders accumulate rewards from subsequent mints
  * 5. Claim rewards after ROI check (portfolio value >= DAV cost)
@@ -99,8 +99,8 @@ contract DAV_V3 is
     
     /// @notice Maximum total supply of DAV tokens (includes 30 initial governance mint)
     /// @dev Hard cap prevents unlimited inflation - enforced in mintDAV() function
-    ///      Total available for public minting: 9,999,970 DAV (MAX_SUPPLY - INITIAL_GOV_MINT)
-    uint256 public constant MAX_SUPPLY = 10000000 ether;
+    ///      Total available for public minting: 999,970 DAV (MAX_SUPPLY - INITIAL_GOV_MINT)
+    uint256 public constant MAX_SUPPLY = 1000000 ether;
     
     /// @notice Maximum number of unique DAV holders allowed
     /// @dev Caps system size to keep gas costs manageable for iteration-based calculations
@@ -118,20 +118,20 @@ contract DAV_V3 is
     ///      Referrer must have active DAV to claim accumulated rewards
     uint256 public constant REFERRAL_BONUS = 5;
     
-    /// @notice Liquidity/buyback share percentage (80% of mint fees)
+    /// @notice Liquidity/buyback share percentage (75% of mint fees)
     /// @dev Sent to BuyAndBurnController for STATE token buyback and burn operations
     ///      This is the primary mechanism for creating STATE demand and reducing supply
-    uint256 public constant LIQUIDITY_SHARE = 80;
+    uint256 public constant LIQUIDITY_SHARE = 75;
     
     /// @notice Development share percentage (5% of mint fees)
     /// @dev Distributed proportionally to dev wallets registered in AuctionAdmin
     ///      Distribution percentages and wallet addresses managed by AuctionAdmin contract
     uint256 public constant DEVELOPMENT_SHARE = 5;
     
-    /// @notice Holder rewards share percentage (10% of mint fees)
+    /// @notice Holder rewards share percentage (15% of mint fees)
     /// @dev Distributed proportionally to all active DAV holders at time of each mint
     ///      Rewards accumulate in holderRewards mapping and can be claimed via claimReward()
-    uint256 public constant HOLDER_SHARE = 10;
+    uint256 public constant HOLDER_SHARE = 15;
     
     /// @notice Basis points for percentage calculations (100%)
     /// @dev Used to validate total percentage allocations equal 100%
@@ -177,7 +177,7 @@ contract DAV_V3 is
     ///      Combined with INITIAL_GOV_MINT equals total circulating supply
     uint256 public mintedSupply;
     
-    /// @notice Total PLS allocated to buyback operations (80% of all mint fees)
+    /// @notice Total PLS allocated to buyback operations (75% of all mint fees)
     /// @dev Cumulative amount sent to BuyAndBurnController for STATE token buyback and burn
     ///      Primary deflationary mechanism reducing STATE supply over time
     uint256 public totalLiquidityAllocated;
@@ -210,7 +210,7 @@ contract DAV_V3 is
     address public auctionAdmin;
     
     /// @notice BuyAndBurnController contract address
-    /// @dev Dual purpose: (1) Receives 80% of mint fees for STATE buyback and burn operations
+    /// @dev Dual purpose: (1) Receives 75% of mint fees for STATE buyback and burn operations
     ///                     (2) Provides STATE/WPLS pool address for ROI price calculations
     ///      Primary mechanism for creating STATE demand and deflationary pressure
     address public buyAndBurnController;
@@ -295,7 +295,7 @@ contract DAV_V3 is
         address _pulsexRouter,
         address _wpls,
         string memory tokenName,
-        string memory tokenSymbol // Should be "pDAV1" for mainnet
+        string memory tokenSymbol // Should be "pDAV01" for mainnet
     ) ERC20(tokenName, tokenSymbol) Ownable(msg.sender) {
         require(
             _stateToken != address(0) &&
@@ -563,7 +563,7 @@ contract DAV_V3 is
     /// @param referralCode Optional referral code for 5% bonus to referrer
     /// @dev Minting process:
     ///      1. Validates amount (whole numbers only), supply cap, holder cap
-    ///      2. Calculates fee distribution: 80% buyback, 10% holders, 5% dev, 5% referral
+    ///      2. Calculates fee distribution: 75% buyback, 15% holders, 5% dev, 5% referral
     ///      3. Updates holder status and creates new mint batch with 30-day expiry
     ///      4. Distributes fees to respective destinations
     ///      5. Mints DAV tokens to caller
@@ -571,14 +571,14 @@ contract DAV_V3 is
     /// @custom:requirements
     /// - Contract not paused
     /// - Amount must be whole DAV tokens (no fractions)
-    /// - Under 2,500 holder cap
+    /// - Under 1,000 holder cap
     /// - Caller is not governance
     /// - Under MAX_SUPPLY cap
     /// - Exact PLS payment (amount × 5,000,000 PLS)
     ///
     /// @custom:distribution
-    /// - 80% → BuyAndBurnController for STATE buyback
-    /// - 10% → Distributed to active DAV holders
+    /// - 75% → BuyAndBurnController for STATE buyback
+    /// - 15% → Distributed to active DAV holders
     /// - 5% → Development wallets via AuctionAdmin
     /// - 5% → Referrer's claimable rewards (if valid code provided)
     ///
@@ -684,7 +684,7 @@ contract DAV_V3 is
         if (liquidityShare > 0) {
             totalLiquidityAllocated += liquidityShare;
             
-            // Send 80% fees to BuyAndBurnController for STATE buyback and burn
+            // Send liquidity fees to BuyAndBurnController for STATE buyback and burn
             require(buyAndBurnController != address(0), "BuyAndBurn not set");
             (bool successLiquidity, ) = buyAndBurnController.call{
                 value: liquidityShare
@@ -851,7 +851,7 @@ contract DAV_V3 is
      * @return total Sum of all active (non-expired) DAV tokens
      *
      * @custom:loop-bounds
-     * - Bounded by MAX_HOLDERS = 2,500 wallets
+    * - Bounded by MAX_HOLDERS = 1,000 wallets
      * - Enforced in mintDAV() and Distribution.updateDAVHolderStatus()
      * - Each getActiveBalance() loops user's batches (typically 1-10)
      *
@@ -885,7 +885,7 @@ contract DAV_V3 is
     }
 
     /**
-     * @notice Claim accumulated holder rewards (from 10% mint distributions + referral bonuses)
+    * @notice Claim accumulated holder rewards (from 15% mint distributions + referral bonuses)
      * @dev Requires ROI verification: user's portfolio value must >= total DAV mint cost
      * 
      * @custom:requirements

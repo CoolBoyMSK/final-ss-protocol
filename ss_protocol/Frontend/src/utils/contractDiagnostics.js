@@ -29,7 +29,7 @@ export const runDiagnostics = async () => {
     // 1. Test RPC Connection
     console.group("1️⃣ Testing RPC Connection");
     const runtimeCfg = getRuntimeConfigSync();
-    results.rpcUrl = runtimeCfg?.network?.rpcUrl || "https://rpc.pulsechain.com";
+    results.rpcUrl = runtimeCfg?.network?.rpcUrl || "https://pulsechain-rpc.publicnode.com";
     
     try {
       const provider = new ethers.JsonRpcProvider(results.rpcUrl);

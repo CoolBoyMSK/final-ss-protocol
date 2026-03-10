@@ -118,6 +118,13 @@ const AuctionSection = () => {
     const selectedDavInfo = davVariantInfo[selectedDav] || davVariantInfo.DAV1;
 
     useEffect(() => {
+        if (!selectedDavInfo?.comingSoon) return;
+        if (!davVariantInfo.DAV1?.comingSoon && selectedDav !== 'DAV1') {
+            setSelectedDav('DAV1');
+        }
+    }, [selectedDav, selectedDavInfo?.comingSoon, davVariantInfo, setSelectedDav]);
+
+    useEffect(() => {
         let cancelled = false;
         (async () => {
             try {
@@ -270,6 +277,7 @@ const AuctionSection = () => {
                     {
                         onlyTotal: true,
                         rpcUrl: runtimeCfg?.network?.rpcUrl,
+                        rpcUrls: runtimeCfg?.network?.rpcUrls,
                         routerAddress: runtimeCfg?.dex?.router?.address,
                         stateAddress: stateAddressRaw,
                         wplsAddress: wplsAddressRaw,
@@ -300,7 +308,9 @@ const AuctionSection = () => {
     };
 
     const handleDavSelectChange = (e) => {
-        setSelectedDav(e.target.value);
+        const nextDav = e.target.value;
+        if (davVariantInfo[nextDav]?.comingSoon) return;
+        setSelectedDav(nextDav);
     };
 
     useEffect(() => {
@@ -427,9 +437,9 @@ const AuctionSection = () => {
                                     onChange={handleDavSelectChange}
                                     style={{ height: "38px", color: "#ffffff", fontWeight: 400 }}
                                 >
-                                    <option value="DAV1">{`JP Morgains (${getDavSymbol('DAV1')})`}</option>
-                                    <option value="DAV2">{`GM Sachs (${getDavSymbol('DAV2')})`}</option>
-                                    <option value="DAV3">{`Deutsche Bros (${getDavSymbol('DAV3')})`}</option>
+                                    <option value="DAV1">{davVariantInfo.DAV1.label}</option>
+                                    <option value="DAV2" disabled={davVariantInfo.DAV2.comingSoon}>{`${davVariantInfo.DAV2.label}${davVariantInfo.DAV2.comingSoon ? ' — Coming Soon' : ''}`}</option>
+                                    <option value="DAV3" disabled={davVariantInfo.DAV3.comingSoon}>{`${davVariantInfo.DAV3.label}${davVariantInfo.DAV3.comingSoon ? ' — Coming Soon' : ''}`}</option>
                                 </select>
                                 <label htmlFor="davSelect" className="floating-label">
                                     Select DAV

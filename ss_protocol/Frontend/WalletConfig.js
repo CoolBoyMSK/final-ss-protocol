@@ -2,6 +2,26 @@ import { createAppKit } from "@reown/appkit/react";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
 import { pulsechain, sonic, polygon } from "@reown/appkit/networks";
 import { QueryClient } from "@tanstack/react-query";
+import { PULSECHAIN_RPC_URLS } from "./src/Constants/RuntimeConfig";
+
+const PULSECHAIN_WS_URL = "wss://pulsechain-rpc.publicnode.com";
+
+const pulsechainNetwork = {
+	...pulsechain,
+	rpcUrls: {
+		...pulsechain.rpcUrls,
+		default: {
+			...(pulsechain.rpcUrls?.default || {}),
+			http: PULSECHAIN_RPC_URLS,
+			webSocket: [PULSECHAIN_WS_URL],
+		},
+		public: {
+			...(pulsechain.rpcUrls?.public || pulsechain.rpcUrls?.default || {}),
+			http: PULSECHAIN_RPC_URLS,
+			webSocket: [PULSECHAIN_WS_URL],
+		},
+	},
+};
 
 // 0. Setup queryClient with optimized memory settings
 const queryClient = new QueryClient({
@@ -28,7 +48,7 @@ const projectId = import.meta.env.VITE_REOWN_PROJECT_ID;
 if (!projectId) throw new Error("Reown projectId is not defined");
 
 // 3. Define networks
-const networks = [pulsechain, polygon, sonic];
+const networks = [pulsechainNetwork, polygon, sonic];
 
 // 4. Create Wagmi Adapter
 const wagmiAdapter = new WagmiAdapter({
@@ -42,7 +62,7 @@ try {
 	createAppKit({
 		adapters: [wagmiAdapter],
 		networks,
-		defaultNetwork: pulsechain,
+		defaultNetwork: pulsechainNetwork,
 		projectId,
 		chainImages: {
 			369: "/pulse-chain.png",
@@ -59,11 +79,11 @@ try {
 
 export { wagmiAdapter, queryClient, networks };
 
-export const chains = [pulsechain, polygon, sonic];
+export const chains = [pulsechainNetwork, polygon, sonic];
 
 
 export const chainCurrencyMap = {
-	[pulsechain.id]: pulsechain.nativeCurrency.symbol,
+	[pulsechainNetwork.id]: pulsechainNetwork.nativeCurrency.symbol,
 	[polygon.id]: polygon.nativeCurrency.symbol,
 	[sonic.id]: sonic.nativeCurrency.symbol,
 };

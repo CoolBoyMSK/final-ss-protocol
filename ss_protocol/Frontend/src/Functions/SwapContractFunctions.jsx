@@ -38,7 +38,7 @@ export const SwapContractProvider = ({ children }) => {
   const { fetchStateHolding } = useDAvContract();
   const chainId = useChainId();
   const selectedDavId = useDeploymentStore((state) => state.selectedDavId);
-  const HTTP_RPC_URL = "https://rpc.pulsechain.com"; // Use reliable RPC
+  const HTTP_RPC_URL = "https://pulsechain-rpc.publicnode.com"; // Use reliable RPC
   // Memoize the HTTP provider to prevent re-creation on every render
   const httpProvider = useMemo(() => new ethers.JsonRpcProvider(HTTP_RPC_URL), []);
   const { loading, provider, signer, AllContracts } =

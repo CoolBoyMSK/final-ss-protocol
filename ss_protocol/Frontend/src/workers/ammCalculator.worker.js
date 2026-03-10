@@ -17,12 +17,23 @@ const DEFAULT_WPLS_ADDRESS = '';
 const DEFAULT_STATE_ADDRESS = '';
 
 // RPC endpoint for background calculations
-const DEFAULT_RPC_URL = 'https://rpc.pulsechain.com';
+const DEFAULT_RPC_URLS = [
+  'https://pulsechain-rpc.publicnode.com',
+  'https://rpc-pulsechain.g4mm4.io',
+  'https://rpc.pulsechain.com',
+];
 
 let provider = null;
 let routerContract = null;
 let providerRpcUrl = null;
 let routerAddress = null;
+
+function normalizeRpcUrls(options = {}) {
+  const fromArray = Array.isArray(options?.rpcUrls) ? options.rpcUrls.filter(Boolean) : [];
+  const fromSingle = options?.rpcUrl ? [options.rpcUrl] : [];
+  const next = [...new Set([...fromArray, ...fromSingle])];
+  return next.length ? next : [...DEFAULT_RPC_URLS];
+}
 
 function normalizeAddress(address) {
   if (!address) return '';
@@ -53,20 +64,24 @@ function initProvider(activeRpcUrl, activeRouterAddress) {
 }
 
 // Calculate TOKEN -> STATE output (wei)
-async function calculateTokenStateWei(tokenAddress, balance, stateAddress, activeRpcUrl, activeRouterAddress, decimals = 18) {
+async function calculateTokenStateWei(tokenAddress, balance, stateAddress, activeRpcUrls, activeRouterAddress, decimals = 18) {
   if (!balance || balance === '0' || !tokenAddress) return 0n;
 
-  try {
-    const { routerContract } = initProvider(activeRpcUrl, activeRouterAddress);
-    const balanceWei = ethers.parseUnits(String(balance), decimals);
-    if (balanceWei === 0n) return 0n;
+  const balanceWei = ethers.parseUnits(String(balance), decimals);
+  if (balanceWei === 0n) return 0n;
 
-    const path = [tokenAddress, stateAddress];
-    const amounts = await routerContract.getAmountsOut(balanceWei, path);
-    return amounts[amounts.length - 1] || 0n;
-  } catch {
-    return 0n;
+  for (const rpcUrl of activeRpcUrls) {
+    try {
+      const { routerContract } = initProvider(rpcUrl, activeRouterAddress);
+      const path = [tokenAddress, stateAddress];
+      const amounts = await routerContract.getAmountsOut(balanceWei, path);
+      return amounts[amounts.length - 1] || 0n;
+    } catch {
+      continue;
+    }
   }
+
+  return 0n;
 }
 
 function formatWeiToIntegerWithCommas(wei) {
@@ -98,7 +113,7 @@ function formatWeiToDisplay(wei) {
 
 async function calculateAllAmmValuesWithOptions(tokens, tokenBalances, options) {
   const onlyTotal = Boolean(options?.onlyTotal);
-  const activeRpcUrl = options?.rpcUrl || DEFAULT_RPC_URL;
+  const activeRpcUrls = normalizeRpcUrls(options);
   const activeRouterAddress = normalizeAddress(options?.routerAddress || DEFAULT_ROUTER_ADDRESS);
 
   if (!activeRouterAddress) {
@@ -138,7 +153,7 @@ async function calculateAllAmmValuesWithOptions(tokens, tokenBalances, options) 
 
     // Always compute TOKEN -> STATE for totals.
     // Only compute TOKEN -> WPLS display values when needed.
-    const stateWei = await calculateTokenStateWei(token.TokenAddress, balance, stateAddress, activeRpcUrl, activeRouterAddress);
+    const stateWei = await calculateTokenStateWei(token.TokenAddress, balance, stateAddress, activeRpcUrls, activeRouterAddress);
     return { tokenName, numeric: 0, display: onlyTotal ? '0' : '0', stateWei };
   }));
 
@@ -153,17 +168,19 @@ async function calculateAllAmmValuesWithOptions(tokens, tokenBalances, options) 
   // Convert aggregated STATE total into PLS once
   let totalSum = '0';
   let totalPlsWei = 0n;
-  try {
-    if (totalStateWei > 0n) {
-      const { routerContract } = initProvider(activeRpcUrl, activeRouterAddress);
-      const path = [stateAddress, wplsAddress];
-      const amounts = await routerContract.getAmountsOut(totalStateWei, path);
-      totalPlsWei = amounts[amounts.length - 1] || 0n;
-      totalSum = formatWeiToIntegerWithCommas(totalPlsWei);
+  if (totalStateWei > 0n) {
+    for (const rpcUrl of activeRpcUrls) {
+      try {
+        const { routerContract } = initProvider(rpcUrl, activeRouterAddress);
+        const path = [stateAddress, wplsAddress];
+        const amounts = await routerContract.getAmountsOut(totalStateWei, path);
+        totalPlsWei = amounts[amounts.length - 1] || 0n;
+        totalSum = formatWeiToIntegerWithCommas(totalPlsWei);
+        break;
+      } catch {
+        continue;
+      }
     }
-  } catch {
-    totalSum = '0';
-    totalPlsWei = 0n;
   }
 
   if (!onlyTotal) {
@@ -182,15 +199,20 @@ async function calculateAllAmmValuesWithOptions(tokens, tokenBalances, options) 
 
       if (tokenName === 'STATE') {
         // STATE row shows STATE -> PLS (matches STATE/WPLS DEX)
-        try {
-          const { routerContract } = initProvider(activeRpcUrl, activeRouterAddress);
-          const path = [stateAddress, wplsAddress];
-          const amounts = await routerContract.getAmountsOut(tokenStateWei, path);
-          const plsWei = amounts[amounts.length - 1] || 0n;
-          results[tokenName] = formatWeiToDisplay(plsWei);
-        } catch {
-          results[tokenName] = '0';
+        let stateDisplay = '0';
+        for (const rpcUrl of activeRpcUrls) {
+          try {
+            const { routerContract } = initProvider(rpcUrl, activeRouterAddress);
+            const path = [stateAddress, wplsAddress];
+            const amounts = await routerContract.getAmountsOut(tokenStateWei, path);
+            const plsWei = amounts[amounts.length - 1] || 0n;
+            stateDisplay = formatWeiToDisplay(plsWei);
+            break;
+          } catch {
+            continue;
+          }
         }
+        results[tokenName] = stateDisplay;
         continue;
       }
 

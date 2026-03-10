@@ -12,7 +12,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { getContractAddress, CHAIN_IDS } from '../Constants/ContractAddresses';
-import { getRuntimeConfigSync } from '../Constants/RuntimeConfig';
+import { getRuntimeConfigSync, PULSECHAIN_RPC_URLS } from '../Constants/RuntimeConfig';
 import { useDeploymentStore } from '../stores';
 
 // LocalStorage keys
@@ -54,14 +54,48 @@ export function useStateOutWorker(options = {}) {
   // Get contract addresses
   const getAddresses = useCallback(() => {
     const cfg = getRuntimeConfigSync();
+    const rpcUrls = cfg?.network?.rpcUrls?.filter(Boolean)?.length
+      ? cfg.network.rpcUrls.filter(Boolean)
+      : [cfg?.network?.rpcUrl].filter(Boolean);
     return {
-      rpcUrl: cfg?.network?.rpcUrl || 'https://rpc.pulsechain.com',
+      rpcUrl: rpcUrls[0] || PULSECHAIN_RPC_URLS[0],
+      rpcUrls: rpcUrls.length ? rpcUrls : PULSECHAIN_RPC_URLS,
       swapV3Address: cfg?.contracts?.core?.SWAP_V3?.address || 
                      getContractAddress(chainId, 'AUCTION'),
       stateAddress: cfg?.contracts?.core?.STATE_V3?.address ||
                     getContractAddress(chainId, 'STATE_TOKEN')
     };
   }, [chainId]);
+
+  const rpcCallWithFallback = useCallback(async (rpcUrls, method, params = []) => {
+    let lastError = null;
+
+    for (const rpcUrl of (rpcUrls?.length ? rpcUrls : PULSECHAIN_RPC_URLS)) {
+      try {
+        const response = await fetch(rpcUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            method,
+            params,
+            id: 1,
+          })
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const data = await response.json();
+        if (data?.error) throw new Error(data.error.message || 'RPC error');
+
+        return data.result;
+      } catch (err) {
+        lastError = err;
+      }
+    }
+
+    throw lastError || new Error('All RPC endpoints failed');
+  }, []);
 
   // Initialize worker
   useEffect(() => {
@@ -183,18 +217,8 @@ export function useStateOutWorker(options = {}) {
     // If no reset block set, use smart default (recent blocks only)
     if (fromBlock == null || fromBlock === 0) {
       try {
-        const response = await fetch(addrs.rpcUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'eth_blockNumber',
-            params: [],
-            id: 1
-          })
-        });
-        const data = await response.json();
-        const currentBlock = parseInt(data.result, 16);
+        const blockHex = await rpcCallWithFallback(addrs.rpcUrls, 'eth_blockNumber');
+        const currentBlock = parseInt(blockHex, 16);
         fromBlock = Math.max(0, currentBlock - DEFAULT_LOOKBACK_BLOCKS);
         console.log('[StateOutWorker] Using default lookback, fromBlock:', fromBlock, 'currentBlock:', currentBlock);
       } catch (err) {
@@ -209,6 +233,7 @@ export function useStateOutWorker(options = {}) {
       type: 'CALCULATE_STATE_OUT',
       options: {
         rpcUrl: addrs.rpcUrl,
+        rpcUrls: addrs.rpcUrls,
         swapV3Address: addrs.swapV3Address,
         stateAddress: addrs.stateAddress,
         fromBlock,
@@ -223,18 +248,8 @@ export function useStateOutWorker(options = {}) {
     try {
       const addrs = getAddresses();
       // Get current block from RPC
-      const response = await fetch(addrs.rpcUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'eth_blockNumber',
-          params: [],
-          id: 1
-        })
-      });
-      const data = await response.json();
-      const currentBlock = parseInt(data.result, 16);
+      const blockHex = await rpcCallWithFallback(addrs.rpcUrls, 'eth_blockNumber');
+      const currentBlock = parseInt(blockHex, 16);
       
       // Save reset block
       localStorage.setItem(storageKeyResetBlock, currentBlock.toString());
@@ -258,7 +273,7 @@ export function useStateOutWorker(options = {}) {
       console.error('Failed to reset counter:', err);
       throw err;
     }
-  }, [getAddresses, storageKeyResetBlock, storageKeyCachedResult]);
+  }, [getAddresses, rpcCallWithFallback, storageKeyResetBlock, storageKeyCachedResult]);
 
   // Clear reset (start from default lookback)
   const clearReset = useCallback(() => {

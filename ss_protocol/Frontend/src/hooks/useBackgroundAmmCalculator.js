@@ -128,7 +128,7 @@ export function useBackgroundAmmCalculator(sortedTokens, tokenBalances, chainId,
   // Initialize provider lazily using cache
   const getRouter = useCallback(() => {
     const runtimeCfg = getRuntimeConfigSync();
-    const rpcUrl = runtimeCfg?.network?.rpcUrl || 'https://rpc.pulsechain.com';
+    const rpcUrl = runtimeCfg?.network?.rpcUrl || 'https://pulsechain-rpc.publicnode.com';
     const routerAddress = runtimeCfg?.dex?.router?.address;
     if (!routerAddress) return null;
 

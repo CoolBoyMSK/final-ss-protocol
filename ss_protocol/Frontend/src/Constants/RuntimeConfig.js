@@ -5,21 +5,29 @@ let loadPromise = null;
 let selectedDavId = 'DAV1';
 let selectedChainId = null;
 
+export const PULSECHAIN_RPC_URLS = [
+  'https://pulsechain-rpc.publicnode.com',
+  'https://rpc-pulsechain.g4mm4.io',
+  'https://rpc.pulsechain.com',
+];
+
+const DEFAULT_RPC_URL = 'https://pulsechain-rpc.publicnode.com';
+
 const DEFAULTS = {
-  network: { chainId: 369, name: 'PulseChain Mainnet', rpcUrl: 'https://rpc.pulsechain.com', explorerUrl: 'https://scan.pulsechain.com', symbolPrefix: 'p' },
+  network: { chainId: 369, name: 'PulseChain Mainnet', rpcUrl: DEFAULT_RPC_URL, rpcUrls: PULSECHAIN_RPC_URLS, explorerUrl: 'https://scan.pulsechain.com', symbolPrefix: 'p' },
   contracts: {
     core: {
-      SWAP_V3: { address: '0x80f7352418C347fF23e3A8E21DfcEd08931f78ec' },
-      STATE_V3: { address: '0xa79B49ec357325df046E72B4f935166AF5575CB8', symbol: 'pSTATE01', name: 'PulseSTATE01', decimals: 18 },
-      DAV_V3: { address: '0x7caeF01F0CBB521fafEA7758db40C95C862e89eB', symbol: 'pDAV01', name: 'PulseDAV01', decimals: 18 },
+      SWAP_V3: { address: '0x069c248f047938F90EDeCCd09c5d0f7dba4C0c22' },
+      STATE_V3: { address: '0x81eF3351ad9A5b56afa757Bc3f41981b5b926707', symbol: 'pSTATE01', name: 'PulseSTATE01', decimals: 18 },
+      DAV_V3: { address: '0xCB5089A21b19EDa9200560A144708d0dFb57D310', symbol: 'pDAV01', name: 'PulseDAV01', decimals: 18 },
     },
     support: {
-      SwapLens: { address: '0x29F839A07dB4793e5d01829Af97258E67D391511' },
-      BuyAndBurnController: { address: '0xF6C7e2B15Fb178ca1e9B5C9f28Cf73b1536C3826' }
+      SwapLens: { address: '0x7b28bD985F8766AB38f69d69Aa071Aa565B01dAc' },
+      BuyAndBurnController: { address: '0x6ad86aB90d5C094fe7C6EE6cB1e2b613fddEe339' }
     },
     stages: {
-      AirdropDistributor: { address: '0xE3c22409c7FEa056784Df7b5D4B2135e1e6d6BB4' },
-      AuctionAdmin: { address: '0x026334e7558dEa67e2ebCCE71762eE0D318035a1' }
+      AirdropDistributor: { address: '0x9C39365714C4815B5Fd2eB4EDbC3Edbd2de70Ca6' },
+      AuctionAdmin: { address: '0x0124fe2b31BF981798fCBD0ef01a5c9fda7bB0a4' }
     },
   },
   dex: {
@@ -38,24 +46,25 @@ const DEFAULT_REGISTRY = {
       chainId: 369,
       name: 'PulseChain Mainnet',
       symbolPrefix: 'p',
-      rpcUrl: 'https://rpc.pulsechain.com',
+      rpcUrl: DEFAULT_RPC_URL,
+      rpcUrls: PULSECHAIN_RPC_URLS,
       explorerUrl: 'https://scan.pulsechain.com',
       deployments: {
         DAV1: { contracts: DEFAULTS.contracts, dex: DEFAULTS.dex },
         DAV2: {
           contracts: {
             core: {
-              SWAP_V3: { address: '0x9a1d8396CDa5C5C2DAFcF2cB321CeEeDde832540' },
-              STATE_V3: { address: '0xBCE4C1Fa04564625F82a440A9df0aa066540d1aE', symbol: 'pSTATE02', name: 'PulseSTATE02', decimals: 18 },
-              DAV_V3: { address: '0x7148d23D57CA014DE64E77119230dF1DAD783E7E', symbol: 'pDAV02', name: 'PulseDAV02', decimals: 18 },
+              SWAP_V3: { address: '' },
+              STATE_V3: { address: '', symbol: 'pSTATE02', name: 'PulseSTATE02', decimals: 18 },
+              DAV_V3: { address: '', symbol: 'pDAV02', name: 'PulseDAV02', decimals: 18 },
             },
             support: {
-              SwapLens: { address: '0x484890A1f4D0c7c5B8D00D162Ddbcf11f5Ab12F6' },
-              BuyAndBurnController: { address: '0xAe3aB505e63beAd1F31BF1cA522B31c043289157' }
+              SwapLens: { address: '' },
+              BuyAndBurnController: { address: '' }
             },
             stages: {
-              AirdropDistributor: { address: '0xEd58521795eF5A93781Fd546D8E589215d332150' },
-              AuctionAdmin: { address: '0x7E32C593248acD38A5050bA7291798cb05383aAB' }
+              AirdropDistributor: { address: '' },
+              AuctionAdmin: { address: '' }
             },
           },
           dex: DEFAULTS.dex,
@@ -63,17 +72,17 @@ const DEFAULT_REGISTRY = {
         DAV3: {
           contracts: {
             core: {
-              SWAP_V3: { address: '0x724A1c1819de38C91eDAa8b05279fD6F1dcE185D' },
-              STATE_V3: { address: '0x867FF7f2Fd12AB05CCF5dbaf32480D4D3B571c5d', symbol: 'pSTATE03', name: 'PulseSTATE03', decimals: 18 },
-              DAV_V3: { address: '0x6b2f153fa4520C7B6d9D78CFD281143a74289641', symbol: 'pDAV03', name: 'PulseDAV03', decimals: 18 },
+              SWAP_V3: { address: '' },
+              STATE_V3: { address: '', symbol: 'pSTATE03', name: 'PulseSTATE03', decimals: 18 },
+              DAV_V3: { address: '', symbol: 'pDAV03', name: 'PulseDAV03', decimals: 18 },
             },
             support: {
-              SwapLens: { address: '0x7A8e5bB41A18C0bD6C8dAE908F1515088E1b064e' },
-              BuyAndBurnController: { address: '0x801760291a11Ec154be4c63629D2326140c54b6C' }
+              SwapLens: { address: '' },
+              BuyAndBurnController: { address: '' }
             },
             stages: {
-              AirdropDistributor: { address: '0xF75df9Ea4Fa86Be748AE2C9Cf2679c4299403256' },
-              AuctionAdmin: { address: '0x61B9062e4b773020e7dd768d2bCe8a951Ba26C5D' }
+              AirdropDistributor: { address: '' },
+              AuctionAdmin: { address: '' }
             },
           },
           dex: DEFAULTS.dex,
@@ -103,6 +112,14 @@ const hasAddress = (value) => {
   return Boolean(addr && /^0x[a-fA-F0-9]{40}$/.test(addr));
 };
 
+const normalizeRpcUrls = (...rpcSources) => [...new Set(rpcSources
+  .flatMap((source) => {
+    if (Array.isArray(source)) return source;
+    if (typeof source === 'string' && source) return [source];
+    return [];
+  })
+  .filter(Boolean))];
+
 const composeRuntimeFromRegistry = (registry, chainId, davId) => {
   const safeRegistry = registry || DEFAULT_REGISTRY;
   const availableNetworks = safeRegistry?.networks || {};
@@ -113,11 +130,17 @@ const composeRuntimeFromRegistry = (registry, chainId, davId) => {
 
   const resolvedDavId = davId || safeRegistry?.defaultSelection?.davId || 'DAV1';
   const deployment = networkEntry?.deployments?.[resolvedDavId] || { contracts: {}, dex: {} };
+  const resolvedRpcUrls = normalizeRpcUrls(
+    networkEntry?.rpcUrls,
+    networkEntry?.rpcUrl,
+    Number(networkEntry?.chainId || effectiveChainId || 0) === 369 ? PULSECHAIN_RPC_URLS : []
+  );
 
   const synthesizedNetwork = {
     chainId: Number(networkEntry?.chainId || effectiveChainId || 0),
     name: networkEntry?.name || KNOWN_CHAIN_NAMES[Number(effectiveChainId || 0)] || `Chain ${effectiveChainId || 0}`,
-    rpcUrl: networkEntry?.rpcUrl || '',
+    rpcUrl: resolvedRpcUrls[0] || networkEntry?.rpcUrl || '',
+    rpcUrls: resolvedRpcUrls,
     explorerUrl: networkEntry?.explorerUrl || '',
     symbolPrefix: networkEntry?.symbolPrefix || 'p',
   };
@@ -230,6 +253,10 @@ export function getRuntimeConfigSync() {
     );
   }
   return runtimeConfig || composeRuntimeFromRegistry(DEFAULT_REGISTRY, selectedChainId || 0, selectedDavId || 'DAV1');
+}
+
+export function getRpcUrlsForChain(chainId, davId = selectedDavId || 'DAV1') {
+  return resolveDeployment(chainId, davId)?.network?.rpcUrls || [];
 }
 
 export function getAddress(path, fallback) {

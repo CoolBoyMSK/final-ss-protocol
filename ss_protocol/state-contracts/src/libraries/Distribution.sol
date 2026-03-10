@@ -126,7 +126,7 @@ library Distribution {
      * @custom:algorithm Two-pass: calculate total supply, then distribute proportionally
      * @custom:formula holderReward = (holderShare × userBalance) ÷ totalActiveSupply
      * @custom:dust Integer division truncation collected and given to first eligible holder
-     * @custom:gas Array length cached once (saves ~5.25M gas per loop at 2500 holders)
+    * @custom:gas Array length cached once (saves gas by avoiding repeated storage reads at 2500 holders)
      */
     function distributeHolderShare(
         HolderState storage state,
@@ -227,8 +227,8 @@ library Distribution {
      * @param sender Address performing the mint
      * @param referralCode Referral code (if any)
      * @param governance Governance address
-     * @param HOLDER_SHARE Percentage for holders (10 = 10%)
-     * @param LIQUIDITY_SHARE Percentage for liquidity/buy&burn (80 = 80%)
+    * @param HOLDER_SHARE Percentage for holders (15 = 15%)
+    * @param LIQUIDITY_SHARE Percentage for liquidity/buy&burn (75 = 75%)
      * @param DEVELOPMENT_SHARE Percentage for development (5 = 5%)
      * @param REFERRAL_BONUS Percentage for referral bonus (5 = 5%)
      * @param davHoldersCount Number of current holders

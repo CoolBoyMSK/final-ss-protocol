@@ -9,13 +9,13 @@ import "../interfaces/IPair.sol";
  * @notice Library for normal auction calculations (users burn DAV to get auction tokens)
  * @dev Library functions called only by AuctionSwap.sol (not directly callable by users).
  * @custom:security Access control and validation enforced in AuctionSwap.sol
- * @custom:flow Burn DAV → Calculate burn amount (30% of airdrop) and STATE bonus (2x pool ratio) → Transfer tokens
+ * @custom:flow Burn DAV → Calculate burn amount (25% of airdrop) and STATE bonus (2x pool ratio) → Transfer tokens
  * @custom:precision 18 decimal precision (1e18), Solidity 0.8.20 overflow protection
  * @custom:bonus STATE_MULTIPLIER = 2 (users receive double market rate STATE tokens)
  */
 library NormalAuctionCalculations {
 
-    /// @notice Conversion rate: 2500 auction tokens per 1 DAV token
+    /// @notice Conversion rate: 2500 auction tokens per 1 DAV token (25% of 10,000 airdrop)
     /// @dev Fixed rate set by protocol design (18 decimals)
     uint256 constant TOKENS_PER_DAV = 2500 ether;
     
@@ -45,7 +45,7 @@ library NormalAuctionCalculations {
      * @param availableDav Amount of DAV tokens available for burning (18 decimals)
      * @return tokensToBurn Amount of auction tokens to burn (18 decimals)
     * @custom:formula tokensToBurn = (availableDav × 2500) ÷ 1e18
-    * @custom:rate 2500 auction tokens per 1 DAV token
+    * @custom:rate 2500 auction tokens per 1 DAV token (25% of 10,000 airdrop)
      */
     function calculateTokensToBurn(uint256 availableDav) internal pure returns (uint256 tokensToBurn) {
         return (availableDav * TOKENS_PER_DAV) / 1e18;

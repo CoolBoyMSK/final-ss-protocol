@@ -7,10 +7,10 @@ import {DAV_V3} from "../src/DavToken.sol";
 
 contract Deploy05_DAV_V3 is Script {
     // Update these addresses after previous deployments
-    address constant STATE_V3_ADDRESS = 0xD46DB85d2fBe4e99f88Ca44c84B04F96D0F8e247; // STATE_V3 from Deploy02
-    address constant AUCTION_ADMIN_ADDRESS = 0x4E2b1e68E7aEE55ec14c6e9be9438CA8f561a6c8; // AuctionAdmin from Deploy03
-    address constant BUY_AND_BURN_ADDRESS = 0x864507B2994353F10a11AAe50bba82f154293f26; // BuyAndBurn from Deploy04
-    address constant SWAP_V3_ADDRESS = 0x0246Ee42982B0ee671Ec0C007dE366c1c8F4Cf30; // SWAP_V3 from Deploy01
+    address constant STATE_V3_ADDRESS = 0x81eF3351ad9A5b56afa757Bc3f41981b5b926707; // STATE_V3 from Deploy02
+    address constant AUCTION_ADMIN_ADDRESS = 0x0124fe2b31BF981798fCBD0ef01a5c9fda7bB0a4; // AuctionAdmin from Deploy03
+    address constant BUY_AND_BURN_ADDRESS = 0x6ad86aB90d5C094fe7C6EE6cB1e2b613fddEe339; // BuyAndBurn from Deploy04
+    address constant SWAP_V3_ADDRESS = 0x069c248f047938F90EDeCCd09c5d0f7dba4C0c22; // SWAP_V3 from Deploy01
     address constant PULSEX_ROUTER_ADDRESS = 0x98bf93ebf5c380C0e6Ae8e192A7e2AE08edAcc02; // PulseX Router V2 (matches SWAP_V3)
     address constant WPLS_ADDRESS = 0xA1077a294dDE1B09bB078844df40758a5D0f9a27; // WPLS token address
     address constant GOV_ADDRESS = 0x0f7F24c7F22e2Ca7052f051A295e1a5D3369cAcE;
@@ -41,12 +41,12 @@ contract Deploy05_DAV_V3 is Script {
             STATE_V3_ADDRESS,         // _stateToken
             GOV_ADDRESS,              // _gov
             AUCTION_ADMIN_ADDRESS,    // _auctionAdmin (for dev fee wallet registry)
-            BUY_AND_BURN_ADDRESS,     // _buyAndBurnController (receives 80% liquidity + ROI calculation)
+            BUY_AND_BURN_ADDRESS,     // _buyAndBurnController (receives liquidity share + ROI calculation)
             SWAP_V3_ADDRESS,          // _swapContract (for ROI calculations)
             PULSEX_ROUTER_ADDRESS,    // _pulsexRouter (for AMM price calculations)
             WPLS_ADDRESS,             // _wpls (for STATE->PLS conversions)
-            "PulseDAV2",              // tokenName
-            "pDAV2"                   // tokenSymbol
+            "pulseDAV01",             // tokenName
+            "pDAV01"                  // tokenSymbol
         );
         
         console.log("SUCCESS: DAV_V3 deployed at:", address(davV3));
@@ -59,11 +59,11 @@ contract Deploy05_DAV_V3 is Script {
         console.log("DAV_V3 Address:", address(davV3));
         console.log("");
         console.log("Token Details:");
-        console.log("- Name: PulseDAV1");
-        console.log("- Symbol: pDAV1");
-        console.log("- Initial governance mint: 100 DAV tokens");
-        console.log("- 80% mint fees go to BuyAndBurnController");
-        console.log("- 10% holder rewards");
+        console.log("- Name: pulseDAV01");
+        console.log("- Symbol: pDAV01");
+        console.log("- Initial governance mint: 10 DAV tokens");
+        console.log("- 75% mint fees go to BuyAndBurnController");
+        console.log("- 15% holder rewards");
         console.log("- 5% development fees");
         console.log("- 5% referral bonus");
         console.log("- STATE token reference:", STATE_V3_ADDRESS);

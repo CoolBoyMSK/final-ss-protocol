@@ -166,7 +166,7 @@ export const ContractProvider = ({ children }) => {
       clearAllPendingRequests();
       // Resolve a reliable read RPC URL from runtime config
       const runtimeCfg = getRuntimeConfigSync();
-      const fallbackRpcUrl = runtimeCfg?.network?.rpcUrl || "https://rpc.pulsechain.com";
+      const fallbackRpcUrl = runtimeCfg?.network?.rpcUrl || "https://pulsechain-rpc.publicnode.com";
 
       // Build an EIP-1193 provider from available sources (walletClient or window.ethereum)
       let browserProvider = null;

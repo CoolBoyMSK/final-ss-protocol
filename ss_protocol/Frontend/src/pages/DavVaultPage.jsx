@@ -4,10 +4,10 @@ import LiveAuctionPage from "../components/Auction/LiveAuctionPage";
 import InfoPage from "../components/Info/InfoPage";
 import ContractsModal from "../components/ContractsModal";
 import { useDeploymentStore } from "../stores";
-import { getRuntimeConfigSync } from "../Constants/RuntimeConfig";
+import { getDeploymentStatus, getRuntimeConfigSync } from "../Constants/RuntimeConfig";
 import { computeManualPhase } from "../utils/auctionTiming";
 
-const DAV1_START_ANCHOR_UTC = 1772287200; // 2026-02-28 14:00:00 UTC (GMT+3 17:00)
+const DAV1_START_ANCHOR_UTC = 1773496800; // 2026-03-14 14:00:00 UTC (GMT+3 17:00)
 const DAV2_DEX_START_ANCHOR_UTC = 1772373600; // 2026-03-01 14:00:00 UTC (GMT+3 17:00)
 const DAV3_START_ANCHOR_UTC = 1772460000; // 2026-03-02 14:00:00 UTC (GMT+3 17:00)
 
@@ -55,9 +55,20 @@ export default function DavVaultPage() {
 
   const symbolFor = (davId) => `${prefix}${davId}`;
 
+  const davAvailability = useMemo(() => ({
+    DAV1: getDeploymentStatus(chainId, "DAV1").ready,
+    DAV2: getDeploymentStatus(chainId, "DAV2").ready,
+    DAV3: getDeploymentStatus(chainId, "DAV3").ready,
+  }), [chainId]);
+
+  useEffect(() => {
+    if (davAvailability[selectedDavId]) return;
+    setSelectedDavId("DAV1");
+  }, [davAvailability, selectedDavId, setSelectedDavId]);
+
   const auctionDayNumber = useMemo(() => {
-    // Anchor: 2026-02-28 14:00:00 UTC = 17:00 GMT+3 (matches utils/auctionTiming.js manual schedule anchor)
-    const anchorMs = Date.parse("2026-02-28T14:00:00Z");
+    // Anchor: 2026-03-14 14:00:00 UTC = 17:00 GMT+3 (matches utils/auctionTiming.js manual schedule anchor)
+    const anchorMs = Date.parse("2026-03-14T14:00:00Z");
     if (!Number.isFinite(anchorMs)) return null;
     const nowMs = Date.now();
     const deltaMs = nowMs - anchorMs;
@@ -330,16 +341,20 @@ export default function DavVaultPage() {
               <button
                 type="button"
                 onClick={() => {
+                  if (!davAvailability.DAV2) return;
                   setSelectedDavId("DAV2");
                   setRightView("auction");
                 }}
                 className={`w-100 text-center dav-vault-btn btn ${selectedDavId === "DAV2" ? "btn-primary" : "btn-dark"}`}
+                disabled={!davAvailability.DAV2}
                 style={{
                   borderRadius: 9999,
                   padding: "10px 12px",
                   border: "1px solid rgba(255,255,255,0.08)",
                   fontWeight: 700,
                   position: "relative",
+                  opacity: davAvailability.DAV2 ? 1 : 0.7,
+                  cursor: davAvailability.DAV2 ? "pointer" : "not-allowed",
                 }}
               >
                 <i className="bi bi-chevron-right" style={{ position: "absolute", right: 14, top: 16, opacity: 0.7 }} />
@@ -347,7 +362,7 @@ export default function DavVaultPage() {
                   <div>
                     GM Sachs
                     <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.9 }}>
-                      {symbolFor('DAV2')} - {typeof dav2DayNumber === "number" && dav2DayNumber > 0 ? `Day ${dav2DayNumber}` : "Coming Soon..."}
+                      {symbolFor('DAV2')} - {davAvailability.DAV2 && typeof dav2DayNumber === "number" && dav2DayNumber > 0 ? `Day ${dav2DayNumber}` : "Coming Soon..."}
                     </div>
                   </div>
                 </div>
@@ -356,16 +371,20 @@ export default function DavVaultPage() {
               <button
                 type="button"
                 onClick={() => {
+                  if (!davAvailability.DAV3) return;
                   setSelectedDavId("DAV3");
                   setRightView("auction");
                 }}
                 className={`w-100 text-center dav-vault-btn btn ${selectedDavId === "DAV3" ? "btn-primary" : "btn-dark"}`}
+                disabled={!davAvailability.DAV3}
                 style={{
                   borderRadius: 9999,
                   padding: "10px 12px",
                   border: "1px solid rgba(255,255,255,0.08)",
                   fontWeight: 700,
                   position: "relative",
+                  opacity: davAvailability.DAV3 ? 1 : 0.7,
+                  cursor: davAvailability.DAV3 ? "pointer" : "not-allowed",
                 }}
               >
                 <i className="bi bi-chevron-right" style={{ position: "absolute", right: 14, top: 16, opacity: 0.7 }} />
@@ -373,7 +392,7 @@ export default function DavVaultPage() {
                   <div>
                     Deutsche Bros
                     <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.9 }}>
-                      {symbolFor('DAV3')} - {typeof dav3DayNumber === "number" && dav3DayNumber > 0 ? `Day ${dav3DayNumber}` : "Coming Soon..."}
+                      {symbolFor('DAV3')} - {davAvailability.DAV3 && typeof dav3DayNumber === "number" && dav3DayNumber > 0 ? `Day ${dav3DayNumber}` : "Coming Soon..."}
                     </div>
                   </div>
                 </div>
