@@ -20,6 +20,7 @@ import DavHistory from "./components/DavHistory";
 import SwapComponent from "./components/Swap/SwapModel";
 import AdminLayout from "./components/admin/AdminLayout";
 import DavVaultPage from "./pages/DavVaultPage";
+import ExchangePage from "./pages/ExchangePage";
 import { useGovernanceGate } from "./components/admin/useGovernanceGate";
 import { startMemoryMonitor, performMemoryCleanup } from "./utils/memoryCleanup";
 import { useChainId } from "wagmi";
@@ -139,6 +140,7 @@ const App = () => {
                   </>
                 }
               />
+              <Route path="/exchange" element={<ExchangePage />} />
               <Route
                 path="/admin/*"
                 element={

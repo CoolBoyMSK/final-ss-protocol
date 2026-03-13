@@ -17,17 +17,17 @@ const DEFAULTS = {
   network: { chainId: 369, name: 'PulseChain Mainnet', rpcUrl: DEFAULT_RPC_URL, rpcUrls: PULSECHAIN_RPC_URLS, explorerUrl: 'https://scan.pulsechain.com', symbolPrefix: 'p' },
   contracts: {
     core: {
-      SWAP_V3: { address: '0x069c248f047938F90EDeCCd09c5d0f7dba4C0c22' },
-      STATE_V3: { address: '0x81eF3351ad9A5b56afa757Bc3f41981b5b926707', symbol: 'pSTATE01', name: 'PulseSTATE01', decimals: 18 },
-      DAV_V3: { address: '0xCB5089A21b19EDa9200560A144708d0dFb57D310', symbol: 'pDAV01', name: 'PulseDAV01', decimals: 18 },
+      SWAP_V3: { address: '0xFEF68179BE7150eAd7a766331d0087Ee26f06098' },
+      STATE_V3: { address: '0x322cEA42A77C2f18B8e79Cc46efBacf73b6a8E6B', symbol: 'pSTATE01', name: 'PulseSTATE01', decimals: 18 },
+      DAV_V3: { address: '0x354BfD4318bfA8FA53f738376E3Bac62B94De677', symbol: 'pDAV01', name: 'PulseDAV01', decimals: 18 },
     },
     support: {
-      SwapLens: { address: '0x7b28bD985F8766AB38f69d69Aa071Aa565B01dAc' },
-      BuyAndBurnController: { address: '0x6ad86aB90d5C094fe7C6EE6cB1e2b613fddEe339' }
+      SwapLens: { address: '0x50069641aB76E36E9cD41e11293bc354b5a6f27A' },
+      BuyAndBurnController: { address: '0xEa6d3ECE832743fbE7416D0841674625609CFDcA' }
     },
     stages: {
-      AirdropDistributor: { address: '0x9C39365714C4815B5Fd2eB4EDbC3Edbd2de70Ca6' },
-      AuctionAdmin: { address: '0x0124fe2b31BF981798fCBD0ef01a5c9fda7bB0a4' }
+      AirdropDistributor: { address: '0x5F85b7c4493EA9363DD353eaA16472c5Ac437509' },
+      AuctionAdmin: { address: '0x5A7Ab76985b5Fe102a5d77fA052566A92c3844B3' }
     },
   },
   dex: {

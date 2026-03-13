@@ -1,0 +1,64 @@
+.exchange-page {
+  font-family: "Satoshi", sans-serif;
+  padding-top: 0.5rem;
+  padding-bottom: 2rem;
+}
+
+.exchange-layout {
+  min-height: calc(100vh - 220px);
+  margin-top: 50px;
+}
+
+.exchange-left-col {
+  margin-top: -78px;
+}
+
+.exchange-hero {
+  background: #212529;
+  border: 1px solid #ffffff26;
+  border-radius: 16px;
+  padding: 1.5rem;
+}
+
+.exchange-title {
+  color: #ffffff;
+  font-size: clamp(2rem, 3.8vw, 3.15rem);
+  line-height: 1.12;
+  font-weight: 700;
+}
+
+.exchange-subtitle {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 1.05rem;
+  line-height: 1.6;
+  max-width: 38ch;
+}
+
+.exchange-note {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.9rem;
+}
+
+.exchange-cta-btn {
+  min-width: 190px;
+}
+
+@media (max-width: 991px) {
+  .exchange-page {
+    padding-top: 0.25rem;
+    padding-bottom: 1.25rem;
+  }
+
+  .exchange-layout {
+    min-height: auto;
+    margin-top: 0;
+  }
+
+  .exchange-left-col {
+    margin-top: 0;
+  }
+
+  .exchange-hero {
+    padding: 1.25rem;
+  }
+}

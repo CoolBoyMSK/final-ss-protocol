@@ -38,7 +38,7 @@ const Header = () => {
               STATE DEX
             </label>
             <p className="detailAmount mb-0" style={{ fontSize: "0.8rem" }}>
-              Profit from both sides of the liquidity pool
+              Asymmetric Liquidity Pools
             </p>
           </NavLink>
           <div className="d-flex align-items-center">
@@ -59,6 +59,11 @@ const Header = () => {
               <li className="nav-item mx-2">
                 <NavLink className={getNavLinkClass} to="/dav-history">
                   DAV History
+                </NavLink>
+              </li>
+              <li className="nav-item mx-2">
+                <NavLink className={getNavLinkClass} to="/exchange">
+                  Buy PLS
                 </NavLink>
               </li>
               {!govLoading && isGovernance && (
@@ -101,6 +106,10 @@ const Header = () => {
         <NavLink to="/dav-history" className={getMobileNavLinkClass}>
           <i className="bi bi-clock-history"></i>
           <div>DAV History</div>
+        </NavLink>
+        <NavLink to="/exchange" className={getMobileNavLinkClass}>
+          <i className="bi bi-currency-exchange"></i>
+          <div>Buy PLS</div>
         </NavLink>
         <NavLink
           target="_blank"

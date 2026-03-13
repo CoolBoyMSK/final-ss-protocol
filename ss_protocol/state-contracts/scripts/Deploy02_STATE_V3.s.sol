@@ -7,7 +7,7 @@ import {STATE_V3} from "../src/StateToken.sol";
 
 contract Deploy02_STATE_V3 is Script {
     // Update this address after SWAP_V3 deployment
-    address constant SWAP_V3_ADDRESS = 0x069c248f047938F90EDeCCd09c5d0f7dba4C0c22; // SWAP_V3 from Deploy01
+    address constant SWAP_V3_ADDRESS = 0xFEF68179BE7150eAd7a766331d0087Ee26f06098; // SWAP_V3 from Deploy01
     address constant GOV_ADDRESS = 0x0f7F24c7F22e2Ca7052f051A295e1a5D3369cAcE;
 
     function run() external {

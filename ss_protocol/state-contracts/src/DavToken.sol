@@ -118,20 +118,20 @@ contract DAV_V3 is
     ///      Referrer must have active DAV to claim accumulated rewards
     uint256 public constant REFERRAL_BONUS = 5;
     
-    /// @notice Liquidity/buyback share percentage (75% of mint fees)
+    /// @notice Liquidity/buyback share percentage (80% of mint fees)
     /// @dev Sent to BuyAndBurnController for STATE token buyback and burn operations
     ///      This is the primary mechanism for creating STATE demand and reducing supply
-    uint256 public constant LIQUIDITY_SHARE = 75;
+    uint256 public constant LIQUIDITY_SHARE = 80;
     
     /// @notice Development share percentage (5% of mint fees)
     /// @dev Distributed proportionally to dev wallets registered in AuctionAdmin
     ///      Distribution percentages and wallet addresses managed by AuctionAdmin contract
     uint256 public constant DEVELOPMENT_SHARE = 5;
     
-    /// @notice Holder rewards share percentage (15% of mint fees)
+    /// @notice Holder rewards share percentage (10% of mint fees)
     /// @dev Distributed proportionally to all active DAV holders at time of each mint
     ///      Rewards accumulate in holderRewards mapping and can be claimed via claimReward()
-    uint256 public constant HOLDER_SHARE = 15;
+    uint256 public constant HOLDER_SHARE = 10;
     
     /// @notice Basis points for percentage calculations (100%)
     /// @dev Used to validate total percentage allocations equal 100%

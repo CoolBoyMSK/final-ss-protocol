@@ -7,10 +7,10 @@ import {DAV_V3} from "../src/DavToken.sol";
 
 contract Deploy05_DAV_V3 is Script {
     // Update these addresses after previous deployments
-    address constant STATE_V3_ADDRESS = 0x81eF3351ad9A5b56afa757Bc3f41981b5b926707; // STATE_V3 from Deploy02
-    address constant AUCTION_ADMIN_ADDRESS = 0x0124fe2b31BF981798fCBD0ef01a5c9fda7bB0a4; // AuctionAdmin from Deploy03
-    address constant BUY_AND_BURN_ADDRESS = 0x6ad86aB90d5C094fe7C6EE6cB1e2b613fddEe339; // BuyAndBurn from Deploy04
-    address constant SWAP_V3_ADDRESS = 0x069c248f047938F90EDeCCd09c5d0f7dba4C0c22; // SWAP_V3 from Deploy01
+    address constant STATE_V3_ADDRESS = 0x322cEA42A77C2f18B8e79Cc46efBacf73b6a8E6B; // STATE_V3 from Deploy02
+    address constant AUCTION_ADMIN_ADDRESS = 0x5A7Ab76985b5Fe102a5d77fA052566A92c3844B3; // AuctionAdmin from Deploy03
+    address constant BUY_AND_BURN_ADDRESS = 0xEa6d3ECE832743fbE7416D0841674625609CFDcA; // BuyAndBurn from Deploy04
+    address constant SWAP_V3_ADDRESS = 0xFEF68179BE7150eAd7a766331d0087Ee26f06098; // SWAP_V3 from Deploy01
     address constant PULSEX_ROUTER_ADDRESS = 0x98bf93ebf5c380C0e6Ae8e192A7e2AE08edAcc02; // PulseX Router V2 (matches SWAP_V3)
     address constant WPLS_ADDRESS = 0xA1077a294dDE1B09bB078844df40758a5D0f9a27; // WPLS token address
     address constant GOV_ADDRESS = 0x0f7F24c7F22e2Ca7052f051A295e1a5D3369cAcE;

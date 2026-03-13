@@ -135,7 +135,7 @@ const ContractsModal = ({ isOpen, onClose, embedded = false, uiVariant }) => {
 
   const content = (
     <div className={`contracts-modal${embedded ? " contracts-embedded" : ""}`} role="document">
-      <div className="contracts-header">
+      <div className="contracts-header" style={{ justifyContent: 'space-between' }}>
         <div className="contracts-header-left">
           <img src={faviconLogo} alt="STATE Protocol logo" className="contracts-logo" />
           <div className="contracts-title-wrap">
@@ -149,6 +149,7 @@ const ContractsModal = ({ isOpen, onClose, embedded = false, uiVariant }) => {
           </div>
         </div>
 
+        {/* DAV selector hidden - only 1 DAV currently deployed
         {isDavVaultVariant ? (
           <div className="contracts-header-controls" aria-label="Contracts filters">
             <select
@@ -165,6 +166,7 @@ const ContractsModal = ({ isOpen, onClose, embedded = false, uiVariant }) => {
             </select>
           </div>
         ) : null}
+        */}
 
         {onClose ? (
           <button
